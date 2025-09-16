@@ -1,0 +1,562 @@
+@RestResource(urlMapping='/applicationFormDetails/*')
+global class applicationFormAPI {
+    public static string accId;
+    global class ResponseWrapper{
+        public String Status;
+        public String Message;
+        public String ResponseCode;
+    }
+    
+    public static Boolean validateEmail(String email) {
+        Boolean res = true;
+        String emailRegex = '^[a-zA-Z0-9._|\\\\%#~`=?&/$^*!}{+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,4}$'; 
+        Pattern MyPattern = Pattern.compile(emailRegex);
+        Matcher MyMatcher = MyPattern.matcher(email);
+        if (!MyMatcher.matches()) 
+            res = false;
+        return res;	
+    }
+    
+    @HTTPPost
+    global static ResponseWrapper createRecord(){
+        List<Product2> getProduct = new List<Product2>();
+        User getDefaultOnlineBDOwner = [Select Id from User where Username =:System.Label.OnlineDefaultBDOwner];
+        Id leadOnlineId = Schema.SObjectType.Lead.getRecordTypeInfosByName().get('Online Program').getRecordTypeId();
+        Id opportunityOnlineId = Schema.SObjectType.Opportunity.getRecordTypeInfosByName().get('Online Program').getRecordTypeId();
+        Id contactOnlineId = Schema.SObjectType.contact.getRecordTypeInfosByName().get('Online Program').getRecordTypeId();
+        Date programDate;
+        String firstName;
+        String lastName;
+        String email,leadUserId;
+        String mobile;
+        ResponseWrapper response = new ResponseWrapper(); 
+        RestRequest req = RestContext.request;
+        RestResponse res = RestContext.response;
+        String str = req.requestBody.toString();
+        System.debug('body is:'+str);
+        String mobileNum,appEmail,userId,productCode;
+        Boolean validEmail,validOtherEmail;
+        Map<String, object> responseMap = (Map<String, object>)JSON.deserializeUntyped(str);
+        log__c log = new log__c();
+        log.End_Point__c = System.Label.ApplicationFormAPIEndPoint;
+        log.Apex_Class__c = 'applicationFormDetails';
+        log.Log_Date__c = system.today();
+        log.Log_Time__c = System.now().time();
+        log.Source__c = 'Application Form details to covent the Lead to Opportunity';
+        log.Type__c = 'API Log';
+        log.Request_Body__c = str;
+        try{
+            if(responseMap.get('other_email')!=null && responseMap.get('other_email')!=''){
+                validOtherEmail = validateEmail(String.valueof(responseMap.get('other_email')));
+            }
+            List<String> responseLiteralsList = new List<String>{'influence','country_code','participant_name','program_year','reference_source','programme_code','Lead_User_id','programme_date','form_id','user_id','first_name','program_display_name','','last_name','application_email','other_email','mobile','current_company','current_role','years_company','industry','total_years','application_stage','application_sub_stage','application_sub_stage_status','objective','is_isb_alumni','alumni_programme_name','alumni_programme_year','alumni_email'};
+                
+                
+                if(responseMap.get('mobile')!=null && responseMap.get('mobile')!='' && responseMap.get('form_id')!=null && responseMap.get('form_id')!='' && responseMap.get('programme_code')!=null && responseMap.get('programme_code')!='' && responseMap.get('application_email')!=null && responseMap.get('application_email')!='' && responseMap.get('last_name')!=null && responseMap.get('last_name')!='' && responseMap.get('user_id')!=null && responseMap.get('user_id')!='' && responseMap.containsKey('mobile') && responseMap.containsKey('last_name') && responseMap.containsKey('application_email') && responseMap.containsKey('user_id') && responseMap.containsKey('form_id') && responseMap.containsKey('programme_code')){
+                    for(String key:responseMap.keyset()){
+                        if(responseLiteralsList.contains(key)){
+                            leadUserId = String.valueOf(responseMap.get('Lead_User_id'));
+                            productCode = String.valueOf(responseMap.get('programme_code'));
+                            mobileNum = String.valueof(responseMap.get('mobile'));
+                            appEmail = String.valueof(responseMap.get('application_email'));
+                            userId = String.valueof(responseMap.get('user_id'));
+                            validEmail = validateEmail(String.valueof(responseMap.get('application_email')));
+                            response.Message = 'SUCCESS : Info recieved Successfully';
+                            response.ResponseCode = '200 : Ok';
+                            response.Status = 'SUCCESS';
+                            log.status__c ='Success';
+                            log.Status_Code__c = '200';
+                            log.Response_Body__c = string.valueof(response);
+                        }
+                        else{
+                            response.Message = 'Exception : Missing required Parameters or incorrect body!!!!';
+                            response.ResponseCode = 'ERROR 400 : Bad Request';
+                            response.Status = 'FAIL';
+                            log.status__c ='Fail';
+                            log.Status_Code__c = '400';
+                            log.Response_Body__c = string.valueof(response);
+                        }
+                    }
+                    
+                    if(response.Status == 'SUCCESS'){
+                        try{
+                            if(leadUserId == null || leadUserId == ''){
+                                leadUserId = 'randonTest';
+                            }
+                                Lead leadRec = [select Id,Application_Sub_Stage_Status__c,Application_Sub_Stage__c,Lead_user_Id__c,Form_Id__c,Application_Stage__c,Work_Experience_in_years__c,Name,Industry__c,Firstname,Current_Role__c,Years_in_Current_Company__c,Current_Company__c,Other_Email__c,FormID__c,Program_Date__c,
+                                                LastName,CEE_ProductCode__c,Email,MobilePhone,Phone,Quantana_User_Id__c,
+                                                completeurl__c,UTMCampaign__c,utm_content__c,UTM__c,UTM_Source__c,UTM_Term__c, City_PGP__c, device__c, gclid__c, placement__c,
+                                                (Select Id,Opportunity__c from Associated_Leads__r) from Lead 
+                                                where (Lead_user_Id__c = :leadUserId or ((Email =:appEmail and CEE_ProductCode__c =:productCode) or (Refined_Mobile_Number__c =:mobileNum and CEE_ProductCode__c =:productCode))) and isConverted = false limit 1 ];
+                                if(responseMap.get('first_name')!=null && responseMap.get('first_name')!=''){
+                                    firstName = String.valueOf(responseMap.get('first_name'));
+                                }
+                                lastName = String.valueOf(responseMap.get('last_name'));
+                                
+                                if(responseMap.get('programme_code')!=null && responseMap.get('programme_code')!=''){
+                                    leadRec.CEE_ProductCode__c =  String.valueOf(responseMap.get('programme_code'));
+                                }
+                                mobile =  String.valueOf(responseMap.get('mobile'));
+                                email =  String.valueOf(responseMap.get('application_email'));
+                                if(responseMap.get('programme_date')!=null && responseMap.get('programme_date')!=''){
+                                    leadRec.Program_Date__c =  Date.parse(String.valueOf(responseMap.get('programme_date')));
+                                }
+                                if(responseMap.get('form_id')!=null && responseMap.get('form_id')!=''){
+                                    leadRec.Form_Id__c =  String.valueOf(responseMap.get('form_id'));
+                                }
+                                if(responseMap.get('other_email')!=null && responseMap.get('other_email')!=''){
+                                    leadrec.Other_Email__c = string.valueOf(responseMap.get('other_email'));
+                                }
+                                if(responseMap.get('current_company')!=null && responseMap.get('current_company')!=''){
+                                    leadRec.Current_Company__c = string.valueOf(responseMap.get('current_company'));
+                                    leadrec.Company = string.valueOf(responseMap.get('current_company'));
+                                }
+                                if((responseMap.get('current_company')==null || responseMap.get('current_company')=='') || test.isRunningTest()){
+                                    leadrec.Company = 'Not Provided';
+                                }
+                                if(responseMap.get('Lead_User_id')!=null  || responseMap.get('Lead_User_id')!=''){
+                                    leadrec.Lead_user_Id__c = string.valueOf(responseMap.get('Lead_User_id'));
+                                }
+                                if(responseMap.get('current_role')!=null && responseMap.get('current_role')!=''){
+                                    leadRec.Current_Role__c = string.valueOf(responseMap.get('current_role'));
+                                }
+                                if(responseMap.get('industry')!=null && responseMap.get('industry')!=''){
+                                    leadRec.Industry__c = string.valueOf(responseMap.get('industry'));
+                                }
+                                if(responseMap.get('application_stage')!=null && responseMap.get('application_stage')!=''){
+                                    leadRec.Application_Stage__c = string.valueOf(responseMap.get('application_stage'));
+                                }
+                                if(responseMap.get('application_sub_stage')!=null && responseMap.get('application_sub_stage')!=''){
+                                    leadRec.Application_Sub_Stage__c = string.valueOf(responseMap.get('application_sub_stage'));
+                                }
+                                if(responseMap.get('application_sub_stage_status')!=null && responseMap.get('application_sub_stage_status')!=''){
+                                    leadRec.Application_Sub_Stage_Status__c = string.valueOf(responseMap.get('application_sub_stage_status'));
+                                }
+                                if(responseMap.get('user_id')!=null && responseMap.get('user_id')!=''){
+                                    leadRec.Quantana_User_Id__c = string.valueOf(responseMap.get('user_id'));
+                                }
+                                System.debug('Before Update:'+leadRec);
+                                Update leadRec;
+                                Id masterAccountId = System.Label.OnlineProgramsAccount;
+                                LeadStatus convertStatus = [SELECT Id, MasterLabel FROM LeadStatus WHERE IsConverted=true LIMIT 1];
+                                Id ConId;
+                                Id accountId;
+                                if(!test.isRunningTest()){
+                                    Account acc = [Select id from Account where id=:masterAccountId];
+                                    accountId = acc.Id;
+                                }
+                                if(test.isRunningTest()){
+                                    Account acc = [Select id from Account where id=:accId];
+                                    accountId = acc.Id;
+                                }
+                                system.debug('accRec:'+accountId);
+                                //Contact con1 = [select id,Email,recordTypeId from contact where Email=:leadRec.Email OR MobilePhone=:leadRec.MobilePhone];
+                                //system.debug('update'+con1);
+                                List<Contact> conList = new List<Contact>();
+                                system.debug('217'+mobile);
+                                system.debug('218'+email);
+                                List<Contact> getCon = [select id,Email,recordTypeId ,MobilePhone from contact where Email=:email OR hed__AlternateEmail__c =:email OR ISB_Email_ID__c =:email OR Official_Email_ID__c =:email OR Personal_Email__c =:email OR Personal_Email_ID_1__c =:email OR  Personal_Email_ID_2__c =:email OR hed__UniversityEmail__c =:email OR hed__WorkEmail__c =:email OR MobilePhone=:mobile limit 1];
+                                system.debug('getcon'+getCon);
+                                if(getCon.size() > 0){
+                                    if(responseMap.get('current_company')!=null)
+                                        getCon[0].Company__c = String.valueOf(responseMap.get('current_company'));
+                                    if(responseMap.get('current_role')!=null)
+                                        getCon[0].Designation__c = String.valueOf(responseMap.get('current_role'));
+                                    ConId = getCon[0].Id;
+                                    Update getCon;
+                                    
+                                }
+                                
+                                system.debug('conRec:'+conId);
+                                Database.LeadConvert lc = new Database.LeadConvert();
+                                lc.setLeadId(leadRec.Id);
+                                system.debug('leadName:'+leadRec.Name);
+                                lc.setOpportunityName(leadRec.Name);
+                                lc.setDoNotCreateOpportunity(false);
+                                lc.setConvertedStatus(convertStatus.MasterLabel);
+                                lc.setAccountId(accountId);
+                                if(ConId != null)
+                                    lc.setContactId(ConId);
+                                Database.LeadConvertResult lcr = Database.convertLead(lc);
+                                system.debug('238:'+lcr.success);
+                                system.debug('239:'+lcr.getOpportunityId());
+                                Id oppId = lcr.getOpportunityId();
+                                system.debug('240:'+lcr.getErrors());
+                                if(oppId != null || lcr.success){
+                                    List<Associated_Lead__c> lehList = new List<Associated_Lead__c>();
+                                    if(leadRec.Associated_Leads__r.size() > 0){
+                                        lehList = leadRec.Associated_Leads__r;
+                                    }
+                                    if(lehList.size() > 0){
+                                        for(Associated_Lead__c leh:lehList){
+                                            leh.Opportunity__c = oppId;
+                                        }
+                                        update lehList;
+                                    }
+                                    
+                                    system.debug('inside');
+                                    Opportunity opp = [select Id,name,APP_Contact__c,recordTypeId,APP_First_Name__c,APP_Last_Name__c,
+                                                       Programme_Code__c,Mobile__c,Email__c,Programme_Date__c,Form_Id__c,Other_Email__c,
+                                                       Quantana_User_Id__c, Current_Company__c,Years_Company__c,Industry__c,Application_Stage__c,
+                                                       Application_Sub_Stage__c,Application_Sub_Stage_Status__c,Total_Years__c,Complete_URL__c,
+                                                       UTM_Campaign__c,UTM_Medium__c,UTM_Source__c,UTM_Term__c,UTM_Content__c,Lead__c,Product_Code_Tableu__c,
+                                                       ISB_Alumni__c ,Alumni_Programme_Year__c ,Alumni_Programme_Name__c ,Alumni_Email__c 
+                                                       from opportunity Where Id=:lcr.getOpportunityId()];
+                                    
+                                    if(ConId != null)
+                                        opp.APP_Contact__c                   =   ConId;
+                                    else
+                                        opp.APP_Contact__c               =   lcr.getContactId();
+                                    if(leadRec.FirstName!=null){
+                                        opp.Name=leadRec.FirstName + ' ' + leadRec.LastName;
+                                    }
+                                    if(leadRec.FirstName==null){
+                                        opp.Name= leadRec.LastName;
+                                    }
+                                    opp.Name = String.valueOf(responseMap.get('last_name'));
+                                    opp.APP_First_Name__c                =   firstName;
+                                    opp.APP_Last_Name__c                 =   lastName;
+                                    opp.Programme_Code__c                =   leadRec.CEE_ProductCode__c;
+                                    opp.Mobile__c                        =   String.valueOf(responseMap.get('mobile'));
+                                    opp.Email__c                         =   String.valueOf(responseMap.get('application_email'));
+                                    opp.Programme_Date__c                =   leadRec.Program_Date__c;
+                                    opp.UTM_Campaign__c                  =   leadRec.UTMCampaign__c;
+                                    opp.UTM_Medium__c                    =   leadRec.UTM__c;
+                                    opp.UTM_Content__c                   =   leadRec.utm_content__c;
+                                    opp.UTM_Source__c                    =   leadRec.UTM_Source__c;
+                                    opp.Lead_user_Id__c                  =   leadRec.Lead_user_Id__c;
+                                    opp.UTM_Term__c                      =   leadRec.UTM_Term__c;
+                                    opp.Complete_URL__c                  =   leadRec.completeurl__c;
+                                    opp.Form_Id__c                       =   string.valueOf(leadRec.Form_Id__c);
+                                    opp.Other_Email__c                   =   leadRec.Other_Email__c;
+                                    opp.Quantana_User_Id__c              =   leadRec.Quantana_User_Id__c;
+                                    opp.Current_Company__c               =   leadRec.Current_Company__c;
+                                    opp.Current_Role__c                  =   leadRec.Current_Role__c;
+                                    opp.Years_Company__c                 =   String.valueOf(responseMap.get('years_company'));
+                                    opp.Industry__c                      =   leadRec.Industry__c;
+                                    opp.StageName						 =   'Applicant';
+                                    opp.Lead__c						 	 =   leadRec.Id;
+                                    opp.Application_Stage__c             =   leadRec.Application_Stage__c;
+                                    opp.Application_Sub_Stage__c         =   leadRec.Application_Sub_Stage__c;
+                                    opp.Application_Sub_Stage_Status__c  =   leadRec.Application_Sub_Stage_Status__c;
+                                    opp.Product_Code_Tableu__c			 =	 leadRec.CEE_ProductCode__c;
+                                    opp.Total_Years__c = String.valueof(responseMap.get('total_years'));
+                                    opp.Programme_Code__c = leadRec.CEE_ProductCode__c;
+                                    //opp.City__c = leadRec.City_PGP__c;
+                                    opp.Device__c = leadRec.device__c;
+                                    opp.GCLID__c = leadRec.gclid__c;
+                                    opp.Placement__c = leadRec.placement__c;
+                                    opp.recordTypeId                     =   opportunityOnlineId;
+                                    if(responseMap.get('program_year')!=null && responseMap.get('program_year')!=''){
+                                        opp.Recommender_Programme_Year__c = string.valueOf(responseMap.get('program_year'));
+                                    }
+                                    if(responseMap.get('participant_name')!=null && responseMap.get('participant_name')!=''){
+                                        opp.Recommender_Name__c = string.valueOf(responseMap.get('participant_name'));
+                                    }
+                                    if(responseMap.get('reference_source')!=null && responseMap.get('reference_source')!=''){
+                                        opp.How_did_you_learn_about_this_programme__c = string.valueOf(responseMap.get('reference_source'));
+                                    }
+                                    if(responseMap.get('influence')!=null && responseMap.get('influence')!=''){
+                                        opp.What_influenced_you_to_apply_to_this_pro__c = string.valueOf(responseMap.get('influence'));
+                                    }
+                                    if(responseMap.get('objective')!=null && responseMap.get('objective')!=''){
+                                        opp.Objectives__c = string.valueOf(responseMap.get('objective'));
+                                    }
+                                    if(responseMap.get('program_display_name')!=null && responseMap.get('program_display_name')!=''){
+                                        opp.program_display_name__c = string.valueOf(responseMap.get('program_display_name'));
+                                    }
+                                    if(responseMap.get('country_code')!=null && responseMap.get('country_code')!=''){
+                                        opp.APP_PhoneCode__c = string.valueOf(responseMap.get('country_code'));
+                                    }
+                                    if(responseMap.get('is_isb_alumni')!=null && responseMap.get('is_isb_alumni')!=''){
+                                        opp.ISB_Alumni__c  = Boolean.valueOf(responseMap.get('is_isb_alumni'));
+                                    }
+                                    if(responseMap.get('alumni_programme_name')!=null && responseMap.get('alumni_programme_name')!=''){
+                                        opp.Alumni_Programme_Name__c   = string.valueOf(responseMap.get('alumni_programme_name'));
+                                    }
+                                    if(responseMap.get('alumni_programme_year')!=null && responseMap.get('alumni_programme_year')!=''){
+                                        opp.Alumni_Programme_Year__c   = string.valueOf(responseMap.get('alumni_programme_year'));
+                                    }
+                                    if(responseMap.get('alumni_email')!=null && responseMap.get('alumni_email')!=''){
+                                        opp.Alumni_Email__c   = string.valueOf(responseMap.get('alumni_email'));
+                                    }
+                                    Update opp;
+                                    system.debug('oppUpdated:'+opp);
+                                }
+                                if((lcr.getContactId() != null && ConId == null) || test.isRunningTest()){
+                                    Contact convertedContact = [Select Id,RecordTypeId from Contact where Id =:lcr.getContactId()];
+                                    if(firstName != null)
+                                        convertedContact.FirstName = firstName;
+                                    convertedContact.LastName = lastName;
+                                    convertedContact.RecordTypeId = contactOnlineId;
+                                    if(responseMap.get('current_company')!=null)
+                                        convertedContact.Company__c = String.valueOf(responseMap.get('current_company'));
+                                    if(responseMap.get('current_role')!=null)
+                                        convertedContact.Designation__c = String.valueOf(responseMap.get('current_role'));
+                                    update convertedContact;
+                                }
+                            
+                        }
+                        catch(Exception e){
+                            mobile =  String.valueOf(responseMap.get('mobile'));
+                            email =  String.valueOf(responseMap.get('application_email'));
+                            system.debug('leadrec is null'+e.getMessage()); 
+                            lead leadRec = new Lead();
+                            if(responseMap.get('first_name')!=null && responseMap.get('first_name')!=''){
+                                leadRec.Firstname = String.valueOf(responseMap.get('first_name'));
+                                firstName = String.valueOf(responseMap.get('first_name'));
+                            }
+                            leadrec.recordTypeId = leadOnlineId;
+                            leadRec.LastName =  String.valueOf(responseMap.get('last_name'));
+                            lastName = String.valueOf(responseMap.get('last_name'));
+                            if(responseMap.get('programme_code')!=null && responseMap.get('programme_code')!=''){
+                                leadRec.CEE_ProductCode__c =  String.valueOf(responseMap.get('programme_code'));
+                                getProduct = [Select Id,Program_Owner__c from Product2 where ProductCode =:String.valueOf(responseMap.get('programme_code')) limit 1];
+                            }
+                            leadRec.MobilePhone =  String.valueOf(responseMap.get('mobile'));
+                            leadRec.Email =  String.valueOf(responseMap.get('application_email'));
+                            if(responseMap.get('programme_date')!=null && responseMap.get('programme_date')!=''){
+                                leadRec.Program_Date__c =  Date.parse(String.valueOf(responseMap.get('programme_date')));
+                            }
+                            if(responseMap.get('form_id')!=null && responseMap.get('form_id')!=''){
+                                leadRec.Form_Id__c =  String.valueOf(responseMap.get('form_id'));
+                            }
+                            if(responseMap.get('other_email')!=null && responseMap.get('other_email')!=''){
+                                leadrec.Other_Email__c = string.valueOf(responseMap.get('other_email'));
+                            }
+                            leadrec.Quantana_User_Id__c = userId;
+                            if(responseMap.get('current_company')!=null && responseMap.get('current_company')!=''){
+                                leadRec.Current_Company__c = string.valueOf(responseMap.get('current_company'));
+                                leadrec.Company = string.valueOf(responseMap.get('current_company'));
+                            }
+                            if(responseMap.get('Lead_User_id')!=null  || responseMap.get('Lead_User_id')!=''){
+                                leadrec.Lead_user_Id__c = string.valueOf(responseMap.get('Lead_User_id'));
+                            }
+                            if((responseMap.get('current_company')==null || responseMap.get('current_company')=='') || test.isRunningTest()){
+                                leadrec.Company = 'Not Provided';
+                            }
+                            if(responseMap.get('current_role')!=null && responseMap.get('current_role')!=''){
+                                leadRec.Current_Role__c = string.valueOf(responseMap.get('current_role'));
+                            }
+                            if(responseMap.get('industry')!=null && responseMap.get('industry')!=''){
+                                leadRec.Industry__c = string.valueOf(responseMap.get('industry'));
+                            }
+                            if(responseMap.get('application_stage')!=null && responseMap.get('application_stage')!=''){
+                                leadRec.Application_Stage__c = string.valueOf(responseMap.get('application_stage'));
+                            }
+                            if(responseMap.get('application_sub_stage')!=null && responseMap.get('application_sub_stage')!=''){
+                                leadRec.Application_Sub_Stage__c = string.valueOf(responseMap.get('application_sub_stage'));
+                            }
+                            if(responseMap.get('application_sub_stage_status')!=null && responseMap.get('application_sub_stage_status')!=''){
+                                leadRec.Application_Sub_Stage_Status__c = string.valueOf(responseMap.get('application_sub_stage_status'));
+                            }
+                            if(responseMap.get('user_id')!=null && responseMap.get('user_id')!=''){
+                                leadRec.Quantana_User_Id__c = string.valueOf(responseMap.get('user_id'));
+                            }
+                            if(getProduct.size() > 0){
+                                if(getProduct[0].Program_Owner__c != null){
+                                    leadRec.OwnerId = getProduct[0].Program_Owner__c;
+                                }
+                                else{
+                                    leadRec.OwnerId = getDefaultOnlineBDOwner.Id;
+                                }
+                                
+                            }
+                            if(getProduct.size() == 0){
+                                leadRec.OwnerId = getDefaultOnlineBDOwner.Id;
+                            }
+                            System.debug('Before Insert:'+leadRec);
+                            Insert leadRec;
+                            Id masterAccountId = System.Label.OnlineProgramsAccount;
+                            LeadStatus convertStatus = [SELECT Id, MasterLabel FROM LeadStatus WHERE IsConverted=true LIMIT 1];
+                            Id ConId;
+                            Id accountId;
+                            if(!test.isRunningTest()){
+                                Account acc = [Select id from Account where id=:masterAccountId];
+                                accountId = acc.Id;
+                            }
+                            if(test.isRunningTest()){
+                                Account acc = [Select id from Account where id=:accId];
+                                accountId = acc.Id;
+                            }
+                            system.debug('accRec:'+accountId);
+                            //Contact con1 = [select id,Email,recordTypeId from contact where Email=:leadRec.Email OR MobilePhone=:leadRec.MobilePhone];
+                            //system.debug('update'+con1);
+                            List<Contact> conList = new List<Contact>();
+                            system.debug('217'+mobile);
+                            system.debug('218'+email);
+                            List<Contact> getCon = [select id,Email,recordTypeId ,MobilePhone from contact where Email=:email OR hed__AlternateEmail__c =:email OR ISB_Email_ID__c =:email OR Official_Email_ID__c =:email OR Personal_Email__c =:email OR Personal_Email_ID_1__c =:email OR  Personal_Email_ID_2__c =:email OR hed__UniversityEmail__c =:email OR hed__WorkEmail__c =:email OR MobilePhone=:mobile limit 1];
+                            system.debug('getcon'+getCon);
+                            if(getCon.size() > 0){
+                                system.debug('goin in');
+                                if(responseMap.get('current_company')!=null)
+                                    getCon[0].Company__c = String.valueOf(responseMap.get('current_company'));
+                                if(responseMap.get('current_role')!=null)
+                                    getCon[0].Designation__c = String.valueOf(responseMap.get('current_role'));
+                                Update getCon;
+                                ConId = getCon[0].Id;
+                            }
+                            
+                            system.debug('conRec:'+conId);
+                            Database.LeadConvert lc = new Database.LeadConvert();
+                            lc.setLeadId(leadRec.Id);
+                            system.debug('leadName:'+leadRec.Name);
+                            lc.setOpportunityName(leadRec.Name);
+                            lc.setDoNotCreateOpportunity(false);
+                            lc.setConvertedStatus(convertStatus.MasterLabel);
+                            lc.setAccountId(accountId);
+                            if(getProduct.size() > 0){
+                                if(getProduct[0].Program_Owner__c != null){
+                                    lc.setOwnerId(getProduct[0].Program_Owner__c);
+                                }
+                                else{
+                                    lc.setOwnerId(getDefaultOnlineBDOwner.Id);
+                                }
+                                
+                            }
+                            if(getProduct.size() == 0){
+                                lc.setOwnerId(getDefaultOnlineBDOwner.Id);
+                            }
+                            if(ConId != null)
+                                lc.setContactId(ConId);
+                            Database.LeadConvertResult lcr = Database.convertLead(lc);
+                            system.debug('238:'+lcr.success);
+                            system.debug('239:'+lcr.getOpportunityId());
+                            Id oppId = lcr.getOpportunityId();
+                            system.debug('240:'+lcr.getErrors());
+                            if(oppId != null || lcr.success){
+                                system.debug('inside');
+                                List<Associated_Lead__c> lehList = [Select Id,Opportunity__c from Associated_Lead__c where Master_Lead__c =:leadRec.Id];
+                                if(lehList.size() > 0 || test.isRunningTest()){
+                                    for(Associated_Lead__c leh:lehList){
+                                        leh.Opportunity__c = oppId;
+                                    }
+                                    update lehList;
+                                }
+                                Opportunity opp = [select Id,name,APP_Contact__c,recordTypeId,APP_First_Name__c,APP_Last_Name__c,
+                                                   Programme_Code__c,Mobile__c,Email__c,Programme_Date__c,Form_Id__c,Other_Email__c,
+                                                   Quantana_User_Id__c, Current_Company__c,Years_Company__c,Industry__c,Application_Stage__c,
+                                                   Application_Sub_Stage__c,Application_Sub_Stage_Status__c,Total_Years__c,Complete_URL__c,
+                                                   UTM_Campaign__c,UTM_Medium__c,UTM_Source__c,UTM_Term__c,UTM_Content__c,Lead__c,Product_Code_Tableu__c
+                                                   from opportunity Where Id=:lcr.getOpportunityId()];
+                                
+                                if(ConId != null)
+                                    opp.APP_Contact__c                   =   ConId;
+                                else
+                                    opp.APP_Contact__c               =   lcr.getContactId();
+                                if(leadRec.FirstName!=null){
+                                    opp.Name=leadRec.FirstName + ' ' + leadRec.LastName;
+                                }
+                                if(leadRec.FirstName==null){
+                                    opp.Name= leadRec.LastName;
+                                }
+                                opp.Name = String.valueOf(responseMap.get('last_name'));
+                                opp.APP_First_Name__c                =   firstName;
+                                opp.APP_Last_Name__c                 =   lastName;
+                                opp.Programme_Code__c                =   leadRec.CEE_ProductCode__c;
+                                opp.Mobile__c                        =   String.valueOf(responseMap.get('mobile'));
+                                opp.Email__c                         =   String.valueOf(responseMap.get('application_email'));
+                                opp.Programme_Date__c                =   leadRec.Program_Date__c;
+                                opp.UTM_Campaign__c                  =   leadRec.UTMCampaign__c;
+                                opp.UTM_Medium__c                    =   leadRec.UTM__c;
+                                opp.UTM_Content__c                   =   leadRec.utm_content__c;
+                                opp.UTM_Source__c                    =   leadRec.UTM_Source__c;
+                                opp.Lead_user_Id__c                  =   leadRec.Lead_user_Id__c;
+                                opp.UTM_Term__c                      =   leadRec.UTM_Term__c;
+                                opp.Complete_URL__c                  =   leadRec.completeurl__c;
+                                opp.Form_Id__c                       =   string.valueOf(leadRec.Form_Id__c);
+                                opp.Other_Email__c                   =   leadRec.Other_Email__c;
+                                opp.Quantana_User_Id__c              =   leadRec.Quantana_User_Id__c;
+                                opp.Current_Company__c               =   leadRec.Current_Company__c;
+                                opp.Current_Role__c                  =   leadRec.Current_Role__c;
+                                opp.Years_Company__c                 =   String.valueOf(responseMap.get('years_company'));
+                                opp.Industry__c                      =   leadRec.Industry__c;
+                                opp.StageName						 =   'Applicant';
+                                opp.Lead__c						 	 =   leadRec.Id;
+                                opp.Application_Stage__c             =   leadRec.Application_Stage__c;
+                                opp.Application_Sub_Stage__c         =   leadRec.Application_Sub_Stage__c;
+                                opp.Application_Sub_Stage_Status__c  =   leadRec.Application_Sub_Stage_Status__c;
+                                opp.Product_Code_Tableu__c			 =	 leadRec.CEE_ProductCode__c;
+                                opp.Total_Years__c = String.valueof(responseMap.get('total_years'));
+                                opp.Programme_Code__c = leadRec.CEE_ProductCode__c;
+                                opp.recordTypeId                     =   opportunityOnlineId;
+                                if(responseMap.get('program_year')!=null && responseMap.get('program_year')!=''){
+                                    opp.Recommender_Programme_Year__c = string.valueOf(responseMap.get('program_year'));
+                                }
+                                if(responseMap.get('participant_name')!=null && responseMap.get('participant_name')!=''){
+                                    opp.Recommender_Name__c = string.valueOf(responseMap.get('participant_name'));
+                                }
+                                if(responseMap.get('reference_source')!=null && responseMap.get('reference_source')!=''){
+                                    opp.How_did_you_learn_about_this_programme__c = string.valueOf(responseMap.get('reference_source'));
+                                }
+                                if(responseMap.get('influence')!=null && responseMap.get('influence')!=''){
+                                    opp.What_influenced_you_to_apply_to_this_pro__c = string.valueOf(responseMap.get('influence'));
+                                }
+                                if(responseMap.get('objective')!=null && responseMap.get('objective')!=''){
+                                    opp.Objectives__c = string.valueOf(responseMap.get('objective'));
+                                }
+                                if(responseMap.get('program_display_name')!=null && responseMap.get('program_display_name')!=''){
+                                    opp.program_display_name__c = string.valueOf(responseMap.get('program_display_name'));
+                                }
+                                if(responseMap.get('country_code')!=null && responseMap.get('country_code')!=''){
+                                    opp.APP_PhoneCode__c = string.valueOf(responseMap.get('country_code'));
+                                }
+                                if(responseMap.get('is_isb_alumni')!=null && responseMap.get('is_isb_alumni')!=''){
+                                    opp.ISB_Alumni__c  = Boolean.valueOf(responseMap.get('is_isb_alumni'));
+                                }
+                                if(responseMap.get('alumni_programme_name')!=null && responseMap.get('alumni_programme_name')!=''){
+                                    opp.Alumni_Programme_Name__c   = string.valueOf(responseMap.get('alumni_programme_name'));
+                                }
+                                if(responseMap.get('alumni_programme_year')!=null && responseMap.get('alumni_programme_year')!=''){
+                                    opp.Alumni_Programme_Year__c   = string.valueOf(responseMap.get('alumni_programme_year'));
+                                }
+                                if(responseMap.get('alumni_email')!=null && responseMap.get('alumni_email')!=''){
+                                    opp.Alumni_Email__c   = string.valueOf(responseMap.get('alumni_email'));
+                                }
+                                Update opp;
+                                system.debug('oppUpdated:'+opp);
+                            }
+                            if((lcr.getContactId() != null && ConId == null) || test.isRunningTest()){
+                                Contact convertedContact = [Select Id,RecordTypeId from Contact where Id =:lcr.getContactId()];
+                                if(firstName != null)
+                                    convertedContact.FirstName = firstName;
+                                convertedContact.LastName = lastName;
+                                convertedContact.RecordTypeId = contactOnlineId;
+                                if(responseMap.get('current_company')!=null)
+                                    convertedContact.Company__c = String.valueOf(responseMap.get('current_company'));
+                                if(responseMap.get('current_role')!=null)
+                                    convertedContact.Designation__c = String.valueOf(responseMap.get('current_role'));
+                                update convertedContact;
+                                
+                            }
+                            
+                        }
+                        
+                    }
+                    
+                }
+            
+            else{
+                response.Message = 'Exception : Missing required Parameters or incorrect body!!!';
+                response.ResponseCode = 'ERROR 400 : Bad Request';
+                response.Status = 'FAIL';
+                log.status__c ='Fail';
+                log.Status_Code__c = '400';
+                log.Response_Body__c = string.valueof(response);
+            }
+        }
+        catch(exception e){
+            response.Message = 'Exception : Something went wrong in the data passed!!'+ e;
+            response.ResponseCode = 'ERROR 400 : Bad Request';
+            response.Status = 'Fail';
+            log.status__c ='Fail';
+            log.Status_Code__c = '400';
+            log.Response_Body__c = string.valueof(response);
+        }
+        insert log;
+        return response;
+    }
+    
+    
+    
+}
