@@ -1,0 +1,678 @@
+/**
+ * @description       : 
+ * @author            : aethereusAdityamahajan
+ * @group             : 
+ * @last modified on  : 05-22-2025
+ * @last modified by  : ChangeMeIn@UserSettingsUnder.SFDoc
+**/
+public class ContactTriggerHelper {
+    // Review Comment - variable names should always be in camel case 
+    public static Set<String>   alternateEmailset = new Set<String>();
+    public static Set<String>   assistantEmailset = new Set<String>();
+    public static Set<String>   isbEmailset = new Set<String>();
+    public static Set<String>   officialEmailset = new Set<String>();
+    public static Set<String>   otherEmailset = new Set<String>();
+    public static Set<String>   personalEmailset = new Set<String>();
+    public static Set<String>   personalEmailID1set = new Set<String>();
+    public static Set<String>   personalEmailID2set = new Set<String>();
+    public static Set<String>   universityEmailset = new Set<String>();
+    public static Set<String>   workEmailset = new Set<String>();
+    public static Set<String>   orderWorkEmailset = new Set<String>();
+    public static Set<String>   emailset = new Set<String>();
+    public static Set<String>   officeEmail2cset = new Set<String>();
+    public static set<string>   allEmailsSet = new set<string>();
+    public static list<string>  allEmailList = new list<string>();
+    public static List<Contact> conEmail = new List<Contact>();
+    public static List<Contact> conofficeEmail = new List<Contact>();
+    public static List<Contact> conAlternateEmail = new List<Contact>();
+    public static List<Contact> orderApiAssistantEmail = new List<Contact>();
+    public static List<Contact> isbEmailID = new List<Contact>();
+    public static List<Contact> officialEmailID = new List<Contact>();
+    public static List<Contact> orderApiOtherEmail = new List<Contact>();
+    public static List<Contact> personalEmailID1 = new List<Contact>();
+    public static List<Contact> personalEmailID2 = new List<Contact>();
+    public static List<Contact> universityEmail = new List<Contact>();
+    public static List<Contact> workEmail = new List<Contact>();
+    public static List<Contact> orderApiWorkEmail = new List<Contact>();
+    public static List<Contact> orderApiPersonalEmail = new List<Contact>();
+    public static boolean chk   = true;
+    public static Id isbAdmissionProcessRecordTypeId = Schema.SObjectType.Contact.getRecordTypeInfosByDeveloperName().get('ISB_Admission_process').getRecordTypeId();	
+
+    @future
+    public static void freezeUser(set<Id> conIdSet){
+        try{
+            Id customProfileId = [SELECT Id FROM Profile WHERE Name = 'Custom  Community Profile'].Id;
+            list<user> contactUser=[select id,contactid,profileid,email from user where contactid in :conIdSet 
+                                    and profileid=:customProfileId];
+            list<Contact> contactList = [select Id,Demise_Date__c,ISB_Email_ID__c,Privilege_Suspension__c,
+                                         Privilege_Suspension_Start_Date__c,Privilege_Suspension_End_Date__c 
+                                         from Contact where Id=:conIdSet];
+            if(contactList.size() > 0){
+                for(Contact con : contactList){
+                    if(contactUser.size() > 0){
+                        if(con.ISB_Email_ID__c == contactUser[0].email && con.id == contactUser[0].contactid){
+                            if(con.Demise_Date__c == null && con.Privilege_Suspension__c == true 
+                               && (date.today()> con.Privilege_Suspension_Start_Date__c
+                                   ||date.today()<con.Privilege_Suspension_End_Date__c 
+                                   ||con.Privilege_Suspension_Start_Date__c!=null   
+                                   ||con.Privilege_Suspension_End_Date__c!=null)){
+                                       contactUser[0].isActive = false;
+                                   }
+                            else if(con.Privilege_Suspension__c == false){
+                                contactUser[0].isActive = true;
+                            }
+                        }
+                    }
+                }
+            }
+            if ( !Test.isRunningTest() ){
+                if(contactUser.size() > 0)
+                    update contactUser[0];
+            }
+        }
+        Catch(Exception e)
+        {	
+            new LogException().Module('Update Alumini Helper Module').log(e);
+        }
+    }
+    
+    
+    @Future
+    public static void insertPledgeForContact(List<Id> contactIds){
+        //id ownerId = [Select Id from user where email='susi_mary@isb.edu'].Id;
+        list<Contact> updatedContactList = new list<Contact>();
+        List<contact> conList = [select Id,Alumni__c,Security_Deposit_Donation_Date__c,Student__c,Student_Check__c,Name,Partial_Amount__c,Security_Deposit__c,Full_Amount__c,hed__Citizenship__c,(Select Id,Name from Contact.Attachments),PAN_Number__c,ISB_Email_ID__c,Account.Name,Country__c,Donation_date__c,Country__r.Name,Current_Postal_Code__c,State__c,State__r.Name,City__c,City__r.Name,Passport_Number__c,Current_Address_Line_1__c,Current_Address_Line_2__c from Contact where id IN : contactIds];
+        List<Pledges_Summary__c> lstPledge = new List<Pledges_Summary__c>();
+        try{
+            for(contact cntct : conList)
+            {
+                system.debug('cntct====>'+cntct);
+                if(cntct.Student__c == true && cntct.Full_Amount__c != null && cntct.Full_Amount__c != 0
+                   && cntct.Partial_Amount__c > 0 && cntct.Partial_Amount__c != null){
+                       
+                   }
+                Decimal PledgedAmount;
+                if(cntct.Full_Amount__c > cntct.Partial_Amount__c){
+                    PledgedAmount = cntct.Partial_Amount__c;
+                    system.debug('PledgedAmount====>'+cntct);
+                }
+                else if(cntct.Full_Amount__c <= cntct.Partial_Amount__c){
+                    PledgedAmount = (cntct.Full_Amount__c);
+                    system.debug('PledgedAmount====>'+cntct);
+                }
+				//Id psRecordTypeId = Schema.SObjectType.Pledges_Summary__c.getRecordTypeInfosByName().get('Security_Deposit').getRecordTypeId();
+                Id recordTypeId =
+                    Schema.SObjectType.Pledges_Summary__c.getRecordTypeInfosByDeveloperName()
+                    .get('Security_Deposit').getRecordTypeId();
+                
+				//String gsRecordTypeID = Schema.getGlobalDescribe().get('Pledges_Summary__c').getDescribe().getRecordTypeInfosByName().get('Record Type Label').getRecordTypeId();
+                system.debug('recordTypeId====>'+recordTypeId);
+                Pledges_Summary__c ps = new Pledges_Summary__c();
+                //ps.OwnerId = ownerId;
+                ps.RecordTypeId = recordTypeId;
+                ps.Name__c = cntct.Id;
+                ps.Currency__c = 'INR';
+                ps.Amount_received_in_pledge_currency__c = PledgedAmount;
+                ps.Pledge__c = PledgedAmount;// amnt in INR
+                ps.NoOfSubPledges__c = 1;
+                ps.PledgeType__c = 'Cash';
+                ps.Pledged_Amount_In_donor_currency__c = cntct.Partial_Amount__c;
+                ps.ForexRatetoINR__c = 1;
+                ps.Date_to_Pledge__c = cntct.Security_Deposit_Donation_Date__c;
+				ps.PledgeEnddate__c = cntct.Donation_date__c;
+                if(ps.Amount_received_in_pledge_currency__c == ps.Pledged_Amount_In_donor_currency__c){
+                    ps.Transaction_Status__c = 'Paid';
+                }
+                else{
+                    ps.Transaction_Status__c = 'Partially Paid';
+                }
+                
+                ps.Mode_of_Payment__c = 'Security Deposit';
+                lstPledge.add(ps);
+            }
+        
+            insert lstPledge;
+			system.debug('lstPledge====>'+lstPledge);
+            set<Id> pdIdSet = new set<Id>();
+            for(Pledges_Summary__c pds : lstPledge){
+                pdIdSet.add(pds.Id);
+            }
+			LIst<Pledges_Summary__c> lstplds = [Select id, Name,Name__c,Currency__c,Amount_received_in_pledge_currency__c,Pledged_Amount_In_donor_currency__c,Pledge__c,NoOfSubPledges__c,ForexRatetoINR__c,Date_to_Pledge__c,PledgeEnddate__c,Transaction_Status__c,Mode_of_Payment__c from Pledges_Summary__c where id in:pdIdSet];
+            List<Pledge_details__c> pdlst = new List<Pledge_details__c>();
+            Integer n = 1;    
+            Id PldrecordTypeId =
+                Schema.SObjectType.Pledge_details__c.getRecordTypeInfosByDeveloperName()
+                .get('Security_Deposit').getRecordTypeId();
+            
+            for(Pledges_Summary__c pd : lstplds){
+                for(Integer i=1;i<=n;i++){
+                    Pledge_details__c p = new Pledge_details__c();
+                    //p.OwnerId = ownerId;
+                    p.Pledge_Summary__c = pd.Id;
+                    p.RecordTypeId = PldrecordTypeId;
+                    system.debug('Pledge detail record @@@'+p.Pledge_Summary__c);
+                    //p.Amount__c=pdamt;
+                    String name = pd.Name +'-'+ i;
+                    system.debug('name@@@ '+name);
+                    p.Name = name;
+                    //p.Account__c = pd.Account__c;
+                    p.Name__c = pd.Name__c;
+                    p.Sub_Pledge_Amount__c = pd.Pledged_Amount_In_donor_currency__c;
+                    p.Amount_received_in_pledge_currency__c = pd.Amount_received_in_pledge_currency__c;
+                    p.Amount_received_INR__c = pd.Amount_received_in_pledge_currency__c;
+                    p.NoOfInstallments__c=1;
+                    p.Classification_of_Gift__c= system.label.SD_Class_Gift;
+					//p.Purpose_Offline__c= system.label.SD_Purpose;
+                    p.Currency__c=pd.currency__c;
+                    if(p.Sub_Pledge_Amount__c == p.Amount_received_in_pledge_currency__c){
+                        p.PLD_Status__c ='Paid';
+                    }
+                    else{
+                        p.PLD_Status__c ='Partially Paid';
+                    }
+                    
+                    p.Frequency_New__c='One-Time';
+                    pdlst.add(p);
+                    system.debug('pdlst@@@ '+pdlst);
+                }
+            }
+            insert pdlst;
+            
+			List<Pledge_details__c> lstOfPlds = [SELECT Id, Name, Name__c, Currency__c, Amount_received_in_pledge_currency__c, Classification_of_Gift__c, Pledge_Summary__r.Currency__c, Pledge_Summary__r.PledgeEnddate__c, Purpose_Offline__c, Restricted_Gift__c, Endowment__c, Sub_Pledge_Amount__c,NoOfInstallments__c,Frequency_New__c FROM Pledge_details__c where id in:pdlst];
+            Id dnrecordTypeId =
+                Schema.SObjectType.Donation__c.getRecordTypeInfosByDeveloperName()
+                .get('Security_Deposit').getRecordTypeId();	
+            List<Donation__c> dnlst = new List<Donation__c>();
+            for(Pledge_details__c pld : lstOfPlds){
+                Donation__c donation = new Donation__c();
+                //donation.OwnerId = ownerId;
+                donation.Pledge_detail__c = pld.Id;
+                donation.RecordTypeId = dnrecordTypeId;
+                donation.Pledge__c = pld.Pledge_Summary__c;
+                String name = pld.Name +'-'+ 1;
+                system.debug('name@@@ '+name);
+                donation.Name = name;
+                donation.Installment_Amount_INR__c = pld.Amount_received_in_pledge_currency__c;
+                donation.Amount_INR__c = pld.Amount_received_in_pledge_currency__c;
+                //	donation.Donation_Status__c = 'Paid';
+                donation.Currency__c = pld.Pledge_Summary__r.Currency__c;
+                //donation.Account__c = pld.Account__c;
+                donation.Name__c = pld.Name__c;
+                donation.Installment_Amount_In_Pledge_Currency__c = pld.Sub_Pledge_Amount__c;
+                donation.Instalment_Received_In_Remittance_Curre__c = pld.Amount_received_in_pledge_currency__c;
+                donation.Outstanding_Amount__c = pld.Sub_Pledge_Amount__c - pld.Amount_received_in_pledge_currency__c;
+                donation.Offline_Amount_from_Receipt__c = pld.Amount_received_in_pledge_currency__c;
+                donation.Due_date__c = pld.Pledge_Summary__r.PledgeEnddate__c;
+                donation.Remittance_Amount__c = pld.Amount_received_in_pledge_currency__c;
+                donation.RemittanceCurrency__c = 'INR';
+                donation.Currency_Exchange_Rate__c = 1;
+                donation.ForexRatetoINR__c = 1;
+                //donation.Currency__c = pld.Currency__c;
+                system.debug('dnlst@@@ '+donation);
+                if(donation.Installment_Amount_In_Pledge_Currency__c == donation.Offline_Amount_from_Receipt__c){
+                    donation.Donation_Status__c = 'Paid';
+                }
+                else{
+                    donation.Donation_Status__c = 'Partially Paid';
+                }
+                dnlst.add(donation);
+            }
+            insert dnlst;
+            
+			List<Donation__c>  donationList = [select Id,Name,Name__c,Pledge_detail__c,Pledge__c,Pledge__r.Date_to_Pledge__c,Pledge__r.PledgeEnddate__c,Installment_Amount_INR__c,Donation_Status__c,Currency__c,Installment_Amount_In_Pledge_Currency__c,Offline_Amount_from_Receipt__c,Due_date__c from Donation__c where id in:dnlst];
+            List<Transaction_Details__c> trnlst = new List<Transaction_Details__c>();
+            for(Donation__c dnrec:donationList){
+                Transaction_Details__c trn = new Transaction_Details__c();
+                //trn.OwnerId = ownerId;
+                trn.Paid_Amount__c = dnrec.Offline_Amount_from_Receipt__c;
+                trn.Donation__c = dnrec.Id;
+                trn.Contact__c = dnrec.Name__c;
+                trn.Forex_Rate_to_INR__c = 1;
+                trn.Currency_Exchange_Rate__c = 1;
+                trn.Remittance_Currency__c = 'INR';
+                trn.Received_Installment_In_Remittance_Curre__c = dnrec.Offline_Amount_from_Receipt__c;
+                trn.Pledge_detail__c = dnrec.Pledge_detail__c;
+                trn.Amount_received_INR__c = dnrec.Offline_Amount_from_Receipt__c;
+                //trn.Receipt__c = rcptrec.Id;
+                trn.Pledge_Summary__c = dnrec.Pledge__c;
+                trn.Transaction_Date__c = dnrec.Pledge__r.PledgeEnddate__c;
+                trnlst.add(trn);
+            }
+            insert trnlst;
+        	
+        	List<Transaction_Details__c> trnList = [SELECT Id,Contact__c,Name,Transaction_Date__c,Paid_Amount__c,Donation__c,Donation__r.Pledge__c,Donation__r.Pledge__r.Name__c,Forex_Rate_to_INR__c,Remittance_Currency__c,Received_Installment_In_Remittance_Curre__c,Pledge_detail__c,Pledge_Summary__c,Contact__r.Security_Deposit_Remarks__c,Contact__r.Security_Deposit_Transaction_Number__c FROM Transaction_Details__c WHERE Id IN:trnlst];
+            List<Receipts__c> rcptListToInsert = new List<Receipts__c>();
+            for(Transaction_Details__c trn : trnList){
+                Receipts__c rcpt = new Receipts__c();
+                //rcpt.OwnerId = ownerId;
+                rcpt.Remittance_Currency__c = trn.Remittance_Currency__c;
+                rcpt.Name__c = trn.Donation__r.Pledge__r.Name__c;
+                rcpt.Receipt_Amount_Pledge_Currency__c = trn.Paid_Amount__c;
+                rcpt.Currency_Exchange_Rate__c = 1;
+                rcpt.Forex_Rate_to_INR__c = 1;
+                //rcpt.Transaction_Number__c = trn.Remittance_Currency__c;
+                rcpt.Transaction_date__c = trn.Transaction_Date__c;
+                rcpt.Receipt_Date__c = trn.Transaction_Date__c;
+                rcpt.Funds_received_in__c = 'Security Deposit';
+                rcpt.Mode_of_Payment__c = 'Security Deposit';
+                rcpt.Check_For_80G__c =true;
+                rcpt.Remarks__c =trn.Contact__r.Security_Deposit_Remarks__c	;
+                rcpt.Purpose__c ='Graduating Class Gift';
+                rcpt.Transaction_Number__c=trn.Contact__r.Security_Deposit_Transaction_Number__c;
+                rcptListToInsert.add(rcpt);
+            }
+            insert rcptListToInsert;
+            map<id,id> transReceiptMap = new map<id,id>();
+            list<Transaction_Details__c> updatedTransList = new list<Transaction_Details__c>();
+            if(rcptListToInsert.size() > 0){
+                for(Receipts__c recp : rcptListToInsert){
+                    transReceiptMap.put(recp.Name__c,recp.id);
+                }
+            }
+            if(trnList.size() > 0){
+                for(Transaction_Details__c trn : trnList){
+                if(transReceiptMap != null && transReceiptMap.containsKey(trn.Contact__c) && transReceiptMap.get(trn.Contact__c) != null){
+                           trn.Receipt__c = transReceiptMap.get(trn.Contact__c);
+                           updatedTransList.add(trn);
+                       }
+                }
+            }
+            if(updatedTransList.size() > 0){
+                update updatedTransList;
+            }
+        } catch(Exception e) {  
+            new LogException().Module('Contact Trigger Handler Module').log(e);
+        }
+    }
+    /*Email duplicate Validations Check*/
+    public static void emailDuplicateValidationsforNewContact(List<Contact> contactList){
+        for(Contact con : contactList){
+                        
+            if(con.Email!=null && con.hed__Preferred_Email__c == null){
+                Emailset.add(con.Email);
+            } 
+            if(con.hed__AlternateEmail__c != null){
+                AlternateEmailset.add(con.hed__AlternateEmail__c);
+            }
+            
+            if(con.Assistant_Email__c!=null){
+                AssistantEmailset.add(con.Assistant_Email__c);
+            }
+            
+            if(con.ISB_Email_ID__c!=null){
+                ISBEmailset.add(con.ISB_Email_ID__c);
+            }
+            if(con.Personal_Email__c!=null){
+                PersonalEmailset.add(con.Personal_Email__c);
+            }
+            if(con.Personal_Email_ID_1__c!=null){
+               PersonalEmailID1set.add(con.Personal_Email_ID_1__c);
+            }
+            if(con.Personal_Email_ID_2__c!=null){
+               PersonalEmailID2set.add(con.Personal_Email_ID_2__c);
+            }
+            if(con.Official_Email_ID__c != null){
+                OfficialEmailset.add(con.Official_Email_ID__c); 
+            }
+            if(con.hed__UniversityEmail__c!=null){
+                UniversityEmailset.add(con.hed__UniversityEmail__c);
+            }
+            if(con.hed__WorkEmail__c!=null){
+                WorkEmailset.add(con.hed__WorkEmail__c);
+            }
+            
+        }
+        
+        // getting the list of Contact in database  with the Contact Email  we entered ( trigger.new)
+        if(!Emailset.isEmpty()){
+            conEmail = getEmailContacts(Emailset);
+        }
+        if(!OfficeEmail2cset.isEmpty()){
+            conofficeEmail = getEmailContacts(OfficeEmail2cset);
+        }
+        if(!AlternateEmailset.isEmpty()){
+            conAlternateEmail = getEmailContacts(AlternateEmailset);
+        }
+        if(!AssistantEmailset.isEmpty()){
+            OrderApiAssistantEmail = getEmailContacts(AssistantEmailset);
+        }
+        if(!ISBEmailset.isEmpty()){
+            ISBEmailID = getEmailContacts(ISBEmailset);
+        }
+        if(!OfficialEmailset.isEmpty()){
+            OfficialEmailID = getEmailContacts(OfficialEmailset);
+        }
+        if(!PersonalEmailset.isEmpty()){
+            OrderApiPersonalEmail = getEmailContacts(PersonalEmailset);
+        }
+        if(!PersonalEmailID1set.isEmpty()){
+            PersonalEmailID1  = getEmailContacts(PersonalEmailID1set);
+        }
+        if(!PersonalEmailID2set.isEmpty()){
+            PersonalEmailID2  = getEmailContacts(PersonalEmailID2set);
+        }
+        if(!UniversityEmailset.isEmpty()){
+            UniversityEmail = getEmailContacts(UniversityEmailset);
+        }
+        if(!WorkEmailset.isEmpty()){
+            WorkEmail = getEmailContacts(WorkEmailset);
+        }
+
+        
+        for(Contact c : contactList)
+        {
+            /*if(c.Email != null && c.hed__Preferred_Email__c == null)
+allEmailList.add(c.Email); 
+if(c.Personal_Email_ID_1__c != null)
+allEmailList.add(c.Personal_Email_ID_1__c);
+if(c.Personal_Email_ID_2__c != null)
+allEmailList.add(c.Personal_Email_ID_2__c);
+if(c.ISB_Email_ID__c != null)
+allEmailList.add(c.ISB_Email_ID__c);
+if(c.Official_Email_ID__c != null)
+allEmailList.add(c.Official_Email_ID__c);
+if(c.Personal_Email__c != null)
+allEmailList.add(c.Personal_Email__c);
+if(c.hed__WorkEmail__c != null)
+allEmailList.add(c.hed__WorkEmail__c);
+if(c.hed__AlternateEmail__c != null)
+allEmailList.add(c.hed__AlternateEmail__c);
+
+
+for(integer i=0;i<allEmailList.size();i++){
+for(integer j=0;j<allEmailList.size();j++){
+if(allEmailList[i] == allEmailList[j] && i != j){
+c.addError('This email '+allEmailList[i]+' is already existed in this contact.');
+chk = false;
+}
+}
+}*/
+            
+            
+            if(conEmail.size() > 0 && chk == true){
+                c.addError('This email '+c.Email+' is already existed in this organization.');
+            } 
+            else if(conAlternateEmail.size() > 0 && chk == true){
+                c.addError('This email '+c.hed__AlternateEmail__c+' is already existed in this organization.');
+            }
+            else if(ISBEmailID.size() > 0 && chk == true){
+                c.addError('This email '+c.ISB_Email_ID__c+' is already existed in this organization.');
+            }
+            else if(OfficialEmailID.size() > 0 && chk == true){
+                c.addError('This email '+c.Official_Email_ID__c+' is already existed in this organization.'); 
+            }
+            else if(OrderApiPersonalEmail.size() > 0 && chk == true){
+                
+                Boolean flag = true;
+                
+                if(c.RecordTypeId == isbAdmissionProcessRecordTypeId){
+                    for(Contact con :OrderApiPersonalEmail){
+                        if(con.Student__c != true && (con.hed__AlternateEmail__c == c.Personal_Email__c || 
+                           con.Personal_Email_ID_1__c == c.Personal_Email__c || 
+                           con.Personal_Email_ID_2__c == c.Personal_Email__c)){
+                		flag = false;
+                        }
+                    }
+                    
+                }
+                
+                else if (c.RecordTypeId != isbAdmissionProcessRecordTypeId){
+                    if(c.Existing_contact_as_applicant__c == true){
+						flag = false;
+                    }
+                }
+                
+                
+                if(flag == true){
+                		c.addError('This email pinsert '+c.Personal_Email__c+' is already existed in this organization.');
+                    
+                }
+
+            }
+            else if(PersonalEmailID1.size() > 0 && chk == true ){
+                c.addError('This email '+c.Personal_Email_ID_1__c+' is already existed in this organization.');
+            }
+            else if(PersonalEmailID2.size() > 0 && chk == true ){
+                c.addError('This email '+c.Personal_Email_ID_2__c+' is already existed in this organization.');
+            }
+            else if(UniversityEmail.size() > 0 && chk == true){
+                c.addError('This email '+c.hed__UniversityEmail__c+' is already existed in this organization.');
+            }
+            else if(WorkEmail.size() > 0 && chk == true){
+                c.addError('This email '+c.hed__WorkEmail__c+' is already existed in this organization.');
+                
+            }
+        }
+    }
+    public static void emailDuplicateValidationsforExistingContact(List<Contact> contactList,Map<Id,Contact> oldMap){
+        /*To check if the email duplication is on the same contact */
+        Set<Id> conIdSet = new Set<Id>();
+        Set<Id> conofficeEmailSet = new Set<Id>();
+        Set<Id> conAlternateEmailSet = new Set<Id>();
+        Set<Id> orderApiAssistantEmailSet = new Set<Id>();
+        Set<Id> ISBEmailIDSet = new Set<Id>(); 
+        Set<Id> officialEmailIDSet = new Set<Id>();
+        Set<Id> orderApiPersonalEmailSet = new Set<Id>();
+        Set<Id> personalEmailConID1Set = new Set<Id>();
+        Set<Id> personalEmailConID2Set = new Set<Id>();
+        Set<Id> universityEmailConIdSet = new Set<Id>();
+        Set<Id> workEmailConIdSet = new Set<Id>();
+
+        Contact oldContact;
+        for(Contact c : contactList){   
+            /*oldContact = oldMap.get(c.ID);
+if(oldContact.Email != null && (oldContact.hed__Preferred_Email__c == null 
+|| oldContact.hed__Preferred_Email__c != null) && c.hed__Preferred_Email__c == null){
+allEmailsSet.add(oldContact.Email);                 
+}
+if(oldContact.Personal_Email_ID_1__c != null)
+allEmailsSet.add(oldContact.Personal_Email_ID_1__c);
+if(oldContact.Personal_Email_ID_2__c != null)
+allEmailsSet.add(oldContact.Personal_Email_ID_2__c);
+if(oldContact.ISB_Email_ID__c != null)
+allEmailsSet.add(oldContact.ISB_Email_ID__c);
+if(oldContact.Official_Email_ID__c != null)
+allEmailsSet.add(oldContact.Official_Email_ID__c);
+if(oldContact.Personal_Email__c != null)
+allEmailsSet.add(oldContact.Personal_Email__c);
+if(oldContact.hed__WorkEmail__c != null)
+allEmailsSet.add(oldContact.hed__WorkEmail__c);
+if(oldContact.hed__AlternateEmail__c != null)
+allEmailsSet.add(oldContact.hed__AlternateEmail__c);
+
+
+if(allEmailsSet.contains(c.Email) && c.Email != oldContact.Email 
+&& (oldContact.hed__Preferred_Email__c == null 
+|| oldContact.hed__Preferred_Email__c != null) 
+&& c.hed__Preferred_Email__c == null){
+c.addError('This email '+c.Email+' is already existed in this contact.');
+chk = false;
+} 
+if(allEmailsSet.contains(c.Personal_Email_ID_1__c) 
+&& c.Personal_Email_ID_1__c != oldContact.Personal_Email_ID_1__c){
+c.addError('This email '+c.Personal_Email_ID_1__c+' is already existed in this contact.');
+chk = false;
+}
+if(allEmailsSet.contains(c.Personal_Email_ID_2__c) 
+&& c.Personal_Email_ID_2__c != oldContact.Personal_Email_ID_2__c){
+c.addError('This email '+c.Personal_Email_ID_2__c+' is already existed in this contact.');
+chk = false;
+}
+if(allEmailsSet.contains(c.ISB_Email_ID__c) 
+&& c.ISB_Email_ID__c != oldContact.ISB_Email_ID__c){
+c.addError('This email '+c.ISB_Email_ID__c+' is already existed in this contact.');
+chk = false;
+}
+if(allEmailsSet.contains(c.Official_Email_ID__c) 
+&& c.Official_Email_ID__c != oldContact.Official_Email_ID__c){
+c.addError('This email '+c.Official_Email_ID__c+' is already existed in this contact.');
+chk = false;
+}
+if(allEmailsSet.contains(c.Personal_Email__c) 
+&& c.Personal_Email__c != oldContact.Personal_Email__c){
+c.addError('This email '+c.Personal_Email__c+' is already existed in this contact.');
+chk = false;
+}
+if(allEmailsSet.contains(c.hed__WorkEmail__c) 
+&& c.hed__WorkEmail__c != oldContact.hed__WorkEmail__c){
+c.addError('This email '+c.hed__WorkEmail__c+' is already existed in this contact.');
+chk = false;
+}
+if(allEmailsSet.contains(c.hed__AlternateEmail__c) 
+&& c.hed__AlternateEmail__c != oldContact.hed__AlternateEmail__c){
+c.addError('This email '+c.hed__AlternateEmail__c+' is already existed in this contact.');
+chk = false;
+}*/
+            
+            if(c.Email!=null && c.hed__Preferred_Email__c == null){
+                Emailset.add(c.Email);
+            } 
+            if(c.hed__AlternateEmail__c!=null ){
+               AlternateEmailset.add(c.hed__AlternateEmail__c);
+            }
+            if(c.ISB_Email_ID__c!=null){
+                ISBEmailset.add(c.ISB_Email_ID__c);
+            }
+            if(c.Official_Email_ID__c != null){
+                OfficialEmailset.add(c.Official_Email_ID__c); 
+            }
+            if(c.Personal_Email__c!=null){
+                PersonalEmailset.add(c.Personal_Email__c);
+            }
+            if(c.Personal_Email_ID_1__c!=null ){
+               PersonalEmailID1set.add(c.Personal_Email_ID_1__c);
+            }
+            if(c.Personal_Email_ID_2__c!=null ){
+               PersonalEmailID2set.add(c.Personal_Email_ID_2__c);
+            }
+            if(c.hed__UniversityEmail__c!=null){
+                UniversityEmailset.add(c.hed__UniversityEmail__c);
+            }
+            if(c.hed__WorkEmail__c!=null){
+                WorkEmailset.add(c.hed__WorkEmail__c);
+            }
+                        
+        }
+        if(!Emailset.isEmpty()){
+            conEmail = getEmailContacts(Emailset);
+             conIdSet = new Map<Id, Contact>(conEmail).keySet();
+        }
+        if(!OfficeEmail2cset.isEmpty()){
+            conofficeEmail =  getEmailContacts(OfficeEmail2cset);
+             conofficeEmailSet = new Map<Id, Contact>(conofficeEmail).keySet();
+        }
+        if(!AlternateEmailset.isEmpty()){
+                        
+            conAlternateEmail = getEmailContacts(AlternateEmailset);
+             conAlternateEmailSet = new Map<Id, Contact>(conAlternateEmail).keySet();
+        }
+        if(!AssistantEmailset.isEmpty()){
+            OrderApiAssistantEmail  = getEmailContacts(AssistantEmailset);
+             OrderApiAssistantEmailSet = new Map<Id, Contact>(OrderApiAssistantEmail).keySet();  
+        }
+        if(!ISBEmailset.isEmpty()){
+            ISBEmailID =  getEmailContacts(ISBEmailset);
+             ISBEmailIDSet = new Map<Id, Contact>(ISBEmailID).keySet();
+        }
+        if(!OfficialEmailset.isEmpty()){
+            OfficialEmailID = getEmailContacts(OfficialEmailset);
+             OfficialEmailIDSet = new Map<Id, Contact>(OfficialEmailID).keySet();
+        }
+        if(!PersonalEmailset.isEmpty()){
+            OrderApiPersonalEmail  = getEmailContacts(PersonalEmailset);
+             OrderApiPersonalEmailSet = new Map<Id, Contact>(OrderApiPersonalEmail).keySet();
+        }
+        if(!PersonalEmailID1set.isEmpty()){
+            PersonalEmailID1  = getEmailContacts(PersonalEmailID1set);
+             PersonalEmailConID1Set = new Map<Id, Contact>(PersonalEmailID1).keySet();
+        }
+        if(!PersonalEmailID2set.isEmpty()){
+            PersonalEmailID2  = getEmailContacts(PersonalEmailID2set);
+             PersonalEmailConID2Set = new Map<Id, Contact>(PersonalEmailID2).keySet();
+        }
+        if(!UniversityEmailset.isEmpty()){
+            UniversityEmail  = getEmailContacts(UniversityEmailset);
+             UniversityEmailConIdSet = new Map<Id, Contact>(UniversityEmail).keySet();
+        }
+        if(!WorkEmailset.isEmpty()){
+            WorkEmail  = getEmailContacts(WorkEmailset);
+             WorkEmailConIdSet = new Map<Id, Contact>(WorkEmail).keySet();
+        }
+                
+        
+        for(Contact c : contactList)
+        {
+            oldContact = oldMap.get(c.ID);
+            
+            
+            if(conEmail.size() > 0 && c.Email != oldContact.Email && c.hed__Preferred_Email__c == null 
+               && (oldContact.hed__Preferred_Email__c == null || oldContact.hed__Preferred_Email__c != null) && !conIdSet.contains(c.Id)/*Added by Eswar to allow same record duplication of email */ && chk == true){
+                   c.addError('This email Email'+c.Email+' is already existed in this organization.');
+               } 
+            
+            else if(conAlternateEmail.size() > 0 && c.hed__AlternateEmail__c != oldContact.hed__AlternateEmail__c && !conAlternateEmailSet.contains(c.Id)/*Added by Eswar to allow same record duplication of email */ &&  chk == true ){
+                c.addError('This email hed__AlternateEmail__c'+c.hed__AlternateEmail__c+' is already existed in this organization.');
+            }
+            else if(ISBEmailID.size() > 0 && c.ISB_Email_ID__c != oldContact.ISB_Email_ID__c && !ISBEmailIDSet.contains(c.Id) && chk == true){
+                c.addError('This email ISB_Email_ID__c'+c.ISB_Email_ID__c+' is already existed in this organization.');
+            }
+            else if(OfficialEmailID.size() > 0 && c.Official_Email_ID__c != oldContact.Official_Email_ID__c && !OfficialEmailIDSet.contains(c.Id)/*Added by Eswar to allow same record duplication of email */ &&  chk == true){
+                c.addError('This email ISB_Email_ID__c'+c.Official_Email_ID__c+' is already existed in this organization.');
+            }
+            else if(OrderApiPersonalEmail.size() > 0 && c.Personal_Email__c != oldContact.Personal_Email__c && !OrderApiPersonalEmailSet.contains(c.Id)/*Added by Eswar to allow same record duplication of email */ && chk == true ){
+                System.debug('Contact to be updated ::::' + c);
+                Boolean flag = true;
+                
+                if(c.RecordTypeId == isbAdmissionProcessRecordTypeId){
+                    for(Contact con :OrderApiPersonalEmail){
+                        if(con.Student__c != true && (con.hed__AlternateEmail__c == c.Personal_Email__c || 
+                           con.Personal_Email_ID_1__c == c.Personal_Email__c || 
+                           con.Personal_Email_ID_2__c == c.Personal_Email__c)){
+                		flag = false;
+                        }
+                    }
+                    
+                }
+                
+              	else if (c.RecordTypeId != isbAdmissionProcessRecordTypeId){
+                    if(c.Existing_contact_as_applicant__c == true){
+						flag = false;
+                    }
+                }
+                
+
+                if(flag == true){
+                c.addError('This email pupdate Personal_Email__c'+c.Personal_Email__c+' is already existed in this organization.');
+                }
+            }
+            else if(PersonalEmailID1.size() > 0 && c.Personal_Email_ID_1__c != oldContact.Personal_Email_ID_1__c && !PersonalEmailConID1Set.contains(c.Id) && chk == true ){
+                c.addError('This email Personal_Email_ID_1__c'+c.Personal_Email_ID_1__c+' is already existed in this organization.');
+            }
+            else if(PersonalEmailID2.size() > 0 && c.Personal_Email_ID_2__c != oldContact.Personal_Email_ID_2__c && !PersonalEmailConID2Set.contains(c.Id) && chk == true ){
+                c.addError('This email Personal_Email_ID_2__c'+c.Personal_Email_ID_2__c+' is already existed in this organization.');
+            }
+            else if(UniversityEmail.size() > 0 && c.hed__UniversityEmail__c != oldContact.hed__UniversityEmail__c && !UniversityEmailConIdSet.contains(c.Id) && chk == true){
+                c.addError('This email hed__UniversityEmail__c'+c.hed__UniversityEmail__c+' is already existed in this organization.');
+            }
+            else if(WorkEmail.size() > 0 && c.hed__WorkEmail__c != oldContact.hed__WorkEmail__c && !WorkEmailConIdSet.contains(c.Id) && chk == true){
+                c.addError('This email hed__WorkEmail__c'+c.hed__WorkEmail__c+' is already existed in this organization.');
+                
+            }
+        }
+    }
+    public static List<Contact> getEmailContacts(Set<String> emailSet){
+        return [select id,Email,hed__AlternateEmail__c, Assistant_Email__c, ISB_Email_ID__c,
+                Personal_Email__c, Personal_Email_ID_1__c, Official_Email_ID__c,
+                Personal_Email_ID_2__c, hed__UniversityEmail__c, hed__WorkEmail__c,
+                RecordTypeId, RecordType.Name, Student__c
+                from Contact where  
+                Assistant_Email__c in: emailSet
+                or ISB_Email_ID__c in: emailSet 
+                or Personal_Email__c in: emailSet 
+                or hed__UniversityEmail__c in: emailSet or hed__WorkEmail__c in: emailSet or Email in: emailSet
+                or Official_Email_ID__c in: emailSet
+                or hed__AlternateEmail__c in: emailSet or Personal_Email_ID_1__c in: emailSet 
+                or Personal_Email_ID_2__c in: emailSet
+               ];
+    }
+}
