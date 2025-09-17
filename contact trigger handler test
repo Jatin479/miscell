@@ -1,0 +1,187 @@
+/* Test class for ContactTriggerHandler (Trigger: UpdateAlumID)*/
+@isTest
+public class ContactTriggerHandlerTest {
+    
+    @isTest
+    public static void ContactTestForZeroBounce(){
+        Trigger_Switch__c ts = new Trigger_Switch__c(name='Contact',SwitchOff__c=false);
+        insert ts;
+        Id ampSuite = Schema.SObjectType.Contact.getRecordTypeInfosByName().get('AMP Suite').getRecordTypeId();
+        Contact contactRecord = new Contact(LastName = 'contactTest',Student_ID_on_Transcript__c='0599485',BirthDate=Date.newInstance(2000, 1, 1),FirstName='Contact',Security_Deposit__c=20000,hed__Citizenship__c='India',Student__c=true,email='test@test.com',RecordTypeId = ampSuite,Donation_date__c =system.today(),Security_Deposit_Transaction_Number__c ='test2627',Security_Deposit_Remarks__c ='test');
+        insert contactRecord;
+        contactRecord.Full_Amount__c = 10000;
+        contactRecord.Partial_Amount__c = 5000;
+        Profile prof = [select id from profile where name LIKE '%Custom  Community Profile%'];
+        user u = new user(lastname='testUser',contactid=contactRecord.id,profileid=prof.id,email='test@test.com',Alias = 'standt',UserName='testUser@test.com',TimeZoneSidKey='GMT',LocaleSidKey='en_US',EmailEncodingKey='UTF-8',LanguageLocaleKey='en_US');
+        insert u;
+        Test.setMock(HttpCalloutMock.class, new ZerobounceMockResponse());
+        Test.startTest();
+        update contactRecord;
+        list<id> idList = new list<id>();
+        idList.add(contactRecord.id);
+        ContactTriggerHelper.insertPledgeForContact(idList);
+        Test.stopTest();
+    }
+    @isTest
+    public static void ContactTestForZeroBounce1(){
+        Id ampSuite = Schema.SObjectType.Contact.getRecordTypeInfosByName().get('AMP Suite').getRecordTypeId();
+        Contact contactRecord = new Contact(LastName = 'contactTest',User_ID__c='6477474',Student_ID_on_Transcript__c='098484757',FirstName='Contact',Security_Deposit__c=20000,hed__Citizenship__c='India',Alumni__C=true,email='test@test.com',RecordTypeId = ampSuite,Full_Amount__c = 10000,Partial_Amount__c = 5000,Security_Deposit_Remarks__c='test',Security_Deposit_Transaction_Number__c='test7577',Donation_date__c=system.today());
+        contactRecord.put(Label.zerobounceContactFieldApi,'gg@gmail.com');
+        insert contactRecord;
+        contactRecord.Send_security_deposit_receipt__c=true;
+        //contactRecord.Partial_Amount__c = 5000;
+        Profile prof = [select id from profile where name LIKE '%Custom  Community Profile%'];
+        user u = new user(lastname='testUser',contactid=contactRecord.id,profileid=prof.id,email='test@test.com',Alias = 'standt',UserName='testUser@test.com',TimeZoneSidKey='GMT',LocaleSidKey='en_US',EmailEncodingKey='UTF-8',LanguageLocaleKey='en_US');
+        insert u;
+        
+        Test.setMock(HttpCalloutMock.class, new ZerobounceMockResponse());
+        Test.startTest();
+        update contactRecord;
+        list<id> idList = new list<id>();
+        idList.add(contactRecord.id);
+        ContactTriggerHelper.insertPledgeForContact(idList);
+        Test.stopTest();
+    }
+    @isTest
+    public static void ContactTestForZeroBounce2(){
+        Id ampSuite = Schema.SObjectType.Contact.getRecordTypeInfosByName().get('AMP Suite').getRecordTypeId();
+        list<contact> conlist =new list<contact>();
+        Contact contactRecord = new Contact(LastName = 'contactTest',User_ID__c='0994958',Student_ID_on_Transcript__c='0094456',FirstName='Contact',Security_Deposit__c=20000,hed__Citizenship__c='India',Alumni__C=true,Associate_Alumni__c=true,email='test@test.com',RecordTypeId = ampSuite,Full_Amount__c = 10000,Partial_Amount__c = 5000,Security_Deposit_Remarks__c='test',Security_Deposit_Transaction_Number__c='test7577',Donation_date__c=system.today());
+        contactRecord.put(Label.zerobounceContactFieldApi,'gg@gmail.com');
+        conlist.add(contactRecord);
+        insert contactRecord;
+        //contactRecord.Full_Amount__c = 10000;
+       // contactRecord.Partial_Amount__c = 5000;
+        contactRecord.Send_security_deposit_receipt__c=true;
+        Profile prof = [select id from profile where name LIKE '%Custom  Community Profile%'];
+        user u = new user(lastname='testUser',contactid=contactRecord.id,profileid=prof.id,email='test@test.com',Alias = 'standt',UserName='testUser@test.com',TimeZoneSidKey='GMT',LocaleSidKey='en_US',EmailEncodingKey='UTF-8',LanguageLocaleKey='en_US');
+        insert u;
+        
+        Test.setMock(HttpCalloutMock.class, new ZerobounceMockResponse());
+        Test.startTest();
+        update contactRecord;
+        list<id> idList = new list<id>();
+        idList.add(contactRecord.id);
+        ContactTriggerHelper.insertPledgeForContact(idList);
+        //ContactTriggerHandler.updateEducationRecordsForcontacts(conlist);
+        //ContactTriggerHandler.disablePortalUser(contactRecord.Id);
+        //ContactTriggerHandler.enablePortalUser(contactRecord.Id);
+        
+        Test.stopTest();
+    }
+
+
+    @isTest
+public static void testforCasCount(){
+    // Insert test data: Trigger Switch and accounts
+    insert new Trigger_Switch__c(Name='Contact', SwitchOff__c=false);
+    Id academicProgramId = Schema.SObjectType.Account.getRecordTypeInfosByName().get('Academic Program').getRecordTypeId();
+    String queueName = [SELECT Id, Name FROM Group WHERE Name LIKE 'PGPPRO Internal Reviewer Queue' LIMIT 1].Name;
+    
+    Account acc1 = new Account(
+        Name = 'Account1', 
+        RecordTypeId = academicProgramId, 
+        Reviewer_queue__c = queueName, 
+        Number_of_review__c = 1, 
+        Program_Type__c = 'Modular',
+        Application_Web_Page_Name__c = 'pgpmax-application-form', 
+        Account_Email__c = 'email@gmail.com', 
+        Phone = '1234567890', 
+        Website = 'www.website.com'
+    );
+    
+    Account acc2 = new Account(
+        Name = 'Account2', 
+        RecordTypeId = academicProgramId, 
+        Reviewer_queue__c = queueName, 
+        Number_of_review__c = 1, 
+        Program_Type__c = 'Modular',
+        Application_Web_Page_Name__c = 'pgpmax-application-form', 
+        Account_Email__c = 'email@gmail.com', 
+        Phone = '1234567890', 
+        Website = 'www.website.com'
+    );
+    
+    insert new List<Account>{acc1, acc2};
+
+    // Create a CAS Contact and associate with acc1
+    Contact con1 = new Contact(
+        LastName = 'test l',
+        Email = 'test@gmail.com',
+        CAS_Contact__c = true,
+        AccountId = acc1.Id,
+        hed__Preferred_Email__c = 'Official Email ID',
+        Official_Email_ID__c = 'test123@gmail.com'
+    );
+    insert con1;
+
+    // Change association to acc2 and update
+    con1.AccountId = acc2.Id;
+    update con1;
+
+    // Assertions to ensure correct CAS contact counts
+    Account refreshedAcc1 = [SELECT No_of_CAS_Contacts__c FROM Account WHERE Id = :acc1.Id];
+    Account refreshedAcc2 = [SELECT No_of_CAS_Contacts__c FROM Account WHERE Id = :acc2.Id];
+    
+    //System.assertEquals(0, refreshedAcc1.No_of_CAS_Contacts__c, 'acc1 should have 0 CAS contacts');
+    System.assertEquals(1, refreshedAcc2.No_of_CAS_Contacts__c, 'acc2 should have 1 CAS contact');
+
+    // Delete the contact and check counts
+    delete con1;
+    
+    refreshedAcc2 = [SELECT No_of_CAS_Contacts__c FROM Account WHERE Id = :acc2.Id];
+    System.assertEquals(0, refreshedAcc2.No_of_CAS_Contacts__c, 'acc2 should revert to 0 CAS contacts after deletion');
+}
+    
+    @isTest
+    public static void InsertUpdateContactTest(){
+    	
+		Map<Id, Contact> contactMap = new Map<Id, Contact>();
+        Contact contactForUpdate = new Contact();
+        List<Contact> contactListForUpdate = new List<Contact>();
+        
+        Id isbAdmissionProcessRecordTypeId = Schema.SObjectType.Contact.getRecordTypeInfosByDeveloperName().get('ISB_Admission_process').getRecordTypeId();	
+        list<contact> conlist =new list<contact>();
+        
+        Contact contactRecord = new Contact(LastName = 'contactTest', hed__Preferred_Email__c = 'Official Email ID', Official_Email_ID__c = 'contacTestOfficial@gmail.com', hed__AlternateEmail__c = 'contactTestalt@gmail.com', Student__c = false,
+										 Personal_Email__c = 'contactTest@gmail.com', FirstName='Contact',hed__Citizenship__c='India',RecordTypeId = isbAdmissionProcessRecordTypeId);
+        Contact contactRecord2 = new Contact(LastName = 'contactTest2',hed__Preferred_Email__c = 'Official Email ID', Official_Email_ID__c = 'contacTest2Official@gmail.com', Student__c = false,
+                                         Personal_Email__c = 'contactTest2@gmail.com', FirstName='Contact2',hed__Citizenship__c='India',RecordTypeId = isbAdmissionProcessRecordTypeId);
+        conlist.add(contactRecord);
+        conlist.add(contactRecord2);
+        insert conlist;
+               
+        list<contact> conlist2 =new list<contact>();
+        Contact contactRecord3 = new Contact(LastName = 'contactTest3',hed__Preferred_Email__c = 'Official Email ID', Official_Email_ID__c = 'contactTest3Official@gmail.com',
+                                             Personal_Email__c = 'contactTestalt@gmail.com', FirstName='Contact3',hed__Citizenship__c='India',RecordTypeId = isbAdmissionProcessRecordTypeId);
+        conlist2.add(contactRecord3);
+        
+        List<Contact> result = [select Id , Email, LastName, Official_Email_ID__c, hed__Preferred_Email__c, hed__AlternateEmail__c, Assistant_Email__c, ISB_Email_ID__c,
+                Personal_Email__c, Personal_Email_ID_1__c,
+                Personal_Email_ID_2__c, hed__UniversityEmail__c, hed__WorkEmail__c,
+                RecordTypeId, RecordType.Name
+                 from Contact];
+        
+		for (Contact con : result) {
+    		contactMap.put(con.Id, con);
+		} 
+        
+        for (Contact con : result) {
+    		if (con.Personal_Email__c == 'contactTest2@gmail.com') {
+        		contactForUpdate.Id = con.Id;
+                contactForUpdate.Personal_Email__c = 'contactTestalt@gmail.com';
+                contactForUpdate.RecordTypeId = con.RecordTypeId;
+        		contactListForUpdate.add(contactForUpdate);
+        		break;
+    		}
+		}
+
+
+        Test.startTest();
+        ContactTriggerHelper.emailDuplicateValidationsforNewContact(conlist2);
+        ContactTriggerHelper.emailDuplicateValidationsforExistingContact(contactListForUpdate,contactMap);
+        Test.stopTest();
+
+    }
+    
+}
