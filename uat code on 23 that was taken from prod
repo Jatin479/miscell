@@ -1,0 +1,2378 @@
+/**
+ * @description       : 
+ * @author            : Sankeerthana.Kotha@myridius.com
+ * @group             : 
+ * @last modified on  : 22-07-2025
+ * @last modified by  : anitha.alex@aethereus.com
+**/
+public class LeadTriggerHandler{
+
+    private static Boolean shouldProcessTrigger = false;
+    public static boolean flagCheck = true;
+    public static boolean onlyOnceBeforeUpdate = true;
+    public static boolean onlyOnceAfterupdte = true;
+    public static boolean onlyOnceAfterinsert = true;
+    public static Id leadExedRecordTypeId    = Schema.SObjectType.Lead.getRecordTypeInfosByName().get('ExecEd').getRecordTypeId();
+    public static Id leadExedB2BRecordTypeId = Schema.SObjectType.Lead.getRecordTypeInfosByName().get('ExecEd B2B').getRecordTypeId();
+    public static Id leadExedHFPRecordTypeId = Schema.SObjectType.Lead.getRecordTypeInfosByName().get('ExecEd HFP').getRecordTypeId();
+    public static Id contactExecEdRecordTypeId = Schema.SObjectType.Contact.getRecordTypeInfosByName().get('ExecEd').getRecordTypeId();
+    public static Id opportunityExecEdId = Schema.SObjectType.Opportunity.getRecordTypeInfosByName().get('CEE-Open-SDP').getRecordTypeId();
+    public static Id grantsRecordTypeIdForLead = Schema.SObjectType.Lead.getRecordTypeInfosByDeveloperName().get(System.Label.GrantsRecordTypeName).getRecordTypeId();
+    public static Id grantsRecordTypeIdForContact = Schema.SObjectType.Contact.getRecordTypeInfosByDeveloperName().get(System.Label.GrantsRecordTypeName).getRecordTypeId();
+    public static Id grantsRecordTypeIdForAccount = Schema.SObjectType.Account.getRecordTypeInfosByDeveloperName().get(System.Label.GrantsRecordTypeName).getRecordTypeId();
+    public static Id grantsRecordTypeIdForOpportunity = Schema.SObjectType.Opportunity.getRecordTypeInfosByDeveloperName().get(System.Label.GrantsRecordTypeName).getRecordTypeId();
+    public static Id OnlineProgramRecordTypeId = Schema.SObjectType.Lead.getRecordTypeInfosByName().get('Online Program').getRecordTypeId();
+    public static Id junkleadrecordTypeId = Schema.SObjectType.Lead.getRecordTypeInfosByName().get('Junk Lead').getRecordTypeId();
+    public static Id AdmissionRecordTypeId = Schema.SObjectType.Lead.getRecordTypeInfosByDeveloperName().get('Admissions').getRecordTypeId();
+    public static Id  AMPrecordTypeId = Schema.SObjectType.Lead.getRecordTypeInfosByDeveloperName().get('AMP_Admissions').getRecordTypeId();
+    public static Id CASB2BrecordTypeId = Schema.SObjectType.Lead.getRecordTypeInfosByDeveloperName().get('CAS_B2B').getRecordTypeId();
+    public static Id ISBApplyrecordTypeId = Schema.SObjectType.Lead.getRecordTypeInfosByDeveloperName().get('ISBApply').getRecordTypeId();
+    public static Id PGPrecordTypeId = Schema.SObjectType.Lead.getRecordTypeInfosByDeveloperName().get('PGP').getRecordTypeId();
+    public static Id EFPMLeadsrecordTypeId = Schema.SObjectType.Lead.getRecordTypeInfosByDeveloperName().get('EFPM_Leads').getRecordTypeId();
+    public static Id FPMrecordTypeId = Schema.SObjectType.Lead.getRecordTypeInfosByDeveloperName().get('FPM').getRecordTypeId();
+    
+    @Future(callout=true)
+    public static void EmailValidationBeforeInsertZerobounce(Id recordId)
+    {
+        try{
+            
+            Lead leadRecord=[Select id,name,Email,Zero_bounce_status__c from Lead Where id=:recordId limit 1];
+            Http http = new Http();
+            HttpRequest request = new HttpRequest();
+            System.debug('entering email check url>'+Label.zerobounceEmailValidationUr);
+            request.setEndpoint(Label.zerobounceEmailValidationUr+'&email='+leadRecord.email+'&ip_address=');
+            request.setMethod('GET');
+            HttpResponse response = http.send(request);
+            if (response.getStatusCode() == 200) {
+                System.debug('response of callout>>>'+response.getBody());
+                Map<String, Object> result= (Map<String, Object>)JSON.deserializeUntyped(response.getBody());
+                System.debug('result map>>'+result);
+                if(result.get('status')!=null)
+                    leadRecord.Zero_bounce_status__c=result.get('status').toString(); 
+                update leadRecord;
+            }
+            else
+            {
+                System.debug('The status code returned was not expected: ' +
+                             response.getStatusCode() + ' ' + response.getStatus());
+            }
+            
+        }Catch(Exception e)
+        {	
+            new LogException().Module('Exception from zerobounce>>').log(e);
+            System.debug('Exception from zerobounce>>'+e);
+        }
+        
+    }
+    
+    /*Updating work Ex in Years with Years of Work Ex without specifying any record Type*/
+    public static void updateWorkEx(List<Lead> leadList){
+        for(Lead lead:leadList){
+            if(lead.Years_of_Work_Exeperience__c != null)
+                lead.Work_Experience_in_years__c = lead.Years_of_Work_Exeperience__c;
+        }
+    }
+    /*Updating Lead Scheduled Program CEE when the recordType is not ExecEd HFP*/
+    public static void AddingScheduletoLead(list<Lead> newList){
+        List<Id> leadIdList = new List<Id>();
+        set<string> CEENames_Set = new set<string>();
+        map<string, Scheduled_Program_CEE__c > ScProgramMap= new map<string, Scheduled_Program_CEE__c >();
+        try{
+            List<Lead> leadList = [Select Id,Name,Scheduled_Program_CEE_Plain__c,RecordTypeId from Lead where Id IN :newList];
+            for(Lead lead_instance : leadList){
+                if(lead_instance.Scheduled_Program_CEE_Plain__c != null){
+                    CEENames_Set.add(lead_instance.Scheduled_Program_CEE_Plain__c );
+                }
+            }
+            List<Scheduled_Program_CEE__c> scheduledProgramList = [select id,Schedule_Program_Full_Name__c from Scheduled_Program_CEE__c  where Schedule_Program_Full_Name__c IN :CEENames_Set ];
+            If(!scheduledProgramList.isEmpty()){
+                for(Scheduled_Program_CEE__c sp_instance : scheduledProgramList){
+                    ScProgramMap.put(sp_instance.Schedule_Program_Full_Name__c, sp_instance);
+                }
+            }
+            List<Lead> updateLeadList = new List<Lead>();
+            if(!ScProgramMap.isEmpty()){
+                for(Lead ld : leadList){
+                    if(ld.Scheduled_Program_CEE_Plain__c  != null && ScProgramMap.containsKey(ld.Scheduled_Program_CEE_Plain__c) && ScProgramMap.get(ld.Scheduled_Program_CEE_Plain__c).Schedule_Program_Full_Name__c == ld.Scheduled_Program_CEE_Plain__c && ld.RecordTypeId != leadExedHFPRecordTypeId){
+                        ld.Scheduled_Program_CEE__c = ScProgramMap.get(ld.Scheduled_Program_CEE_Plain__c).id;
+                        updateLeadList.add(ld);
+                    }
+                }
+            }
+            update updateLeadList;
+        }
+        Catch(Exception e)
+        {	
+            new LogException().Module('Exception from zerobounce>>').log(e);
+        }
+    }
+    
+    /*Updating the product and Product Code on Lead, Also updating the lead Status with Email,Phone.Mobile, Form Name, Counter value.*/
+    public static void leadOwnerMapping(list<Lead> newList){
+        set<ID> leadIds = new set<ID>();
+        set<string> productCodeSet = new set<string>();
+        set<string> productSet = new set<string>();
+        Map<String, Product2> prodCodesMap = new Map<String, Product2>();
+        Map<String, Product2> prodMap = new Map<String, Product2>();
+        for(lead lead_instance : newList){
+            if(lead_instance.CEE_ProductCode__c != null){
+                productCodeSet.add(lead_instance.CEE_ProductCode__c);
+            }
+            if(lead_instance.Product__c!=null){
+                productSet.add(lead_instance.Product__c);
+            }
+        }        
+        try{
+            for(Product2 product_instance : [SELECT Id,ProductCode,Program_Owner__c FROM Product2 WHERE ProductCode IN :productCodeSet or Id IN:productSet]){
+                prodCodesMap.put(product_instance.ProductCode,product_instance);
+                prodMap.put(product_instance.Id,product_instance);
+            }
+            for(lead lead_instance : newList){
+                if(lead_instance.CEE_ProductCode__c != null){
+                    if(prodCodesMap.containskey(lead_instance.CEE_ProductCode__c)){
+                        lead_instance.Product__c = prodCodesMap.get(lead_instance.CEE_ProductCode__c).Id;
+                    }
+                }
+            }
+            //updateLeadStatus(leadList);
+        }
+        catch(Exception e)
+        {
+            new LogException().log(e);
+        }
+    }
+    
+    /*public static void updateLeadStatus(list<lead> LeadList){
+set<string> emailSet = new set<string>();
+set<string> mobileSet = new set<string>();
+set<string> utmSourceSet = new set<string>();
+set<string> productCodeSet = new set<string>();
+set<Id> productNameSet = new set<Id>();
+set<decimal> formIdSet = new set<decimal>();
+set<string> formNameSet = new set<string>();
+set<Id> idSet = new set<Id>();
+list<lead> existingLeadsList = new list<Lead>();
+map<string,lead> leadMap = new map<string,lead>();
+map<string,lead> leadFormMap = new map<string,lead>();
+if(LeadList.size() > 0){
+for(lead lead_instance : LeadList){
+if(lead_instance.RecordTypeId == leadExedRecordTypeId){
+if(lead_instance.Email != null){
+emailSet.add(lead_instance.Email);
+}
+if(lead_instance.MobilePhone != null){
+mobileSet.add(lead_instance.MobilePhone);
+}
+if(lead_instance.CEE_ProductCode__c != null){
+productCodeSet.add(lead_instance.CEE_ProductCode__c);
+}
+if(lead_instance.Product__c != null){
+productNameSet.add(lead_instance.Product__c);
+}
+idSet.add(lead_instance.Id);
+}
+if(lead_instance.RecordTypeId != leadExedRecordTypeId){
+if(lead_instance.Email != null){
+emailSet.add(lead_instance.Email);
+}
+if(lead_instance.MobilePhone != null){
+mobileSet.add(lead_instance.MobilePhone);
+}
+if(lead_instance.FormName__c != null){
+formNameSet.add(lead_instance.FormName__c);
+}
+if(lead_instance.FormID__c != null){
+formIdSet.add(lead_instance.FormID__c);
+}
+idSet.add(lead_instance.Id);
+}
+}
+}
+if(!emailSet.isEmpty() && !mobileSet.isEmpty() && !productCodeSet.isEmpty() && !productNameSet.isEmpty()){
+existingLeadsList = [Select Id,FormName__c,FormID__c,Counter__c,LastName,Company,FirstName,Email,MobilePhone,UTM_Source__c,CEE_ProductCode__c,Product__c,Product__r.Name from Lead Where Email =:emailSet AND MobilePhone =:mobileSet AND CEE_ProductCode__c =:productCodeSet AND Product__c =:productNameSet AND Id NOT IN:idSet];
+}
+if(!emailSet.isEmpty() && !mobileSet.isEmpty() && !formNameSet.isEmpty() && !formIdSet.isEmpty()){
+existingLeadsList = [Select Id,FormName__c,FormID__c,Counter__c,LastName,Company,FirstName,Email,MobilePhone,UTM_Source__c,CEE_ProductCode__c,Product__c,Product__r.Name from Lead Where Email =:emailSet AND MobilePhone =:mobileSet AND FormName__c =:formNameSet AND FormId__c =:formIdSet AND Id NOT IN:idSet];
+}
+if(existingLeadsList.size() > 0){
+for(Lead lead_instance : existingLeadsList){
+if(lead_instance.CEE_ProductCode__c != null && lead_instance.Product__c != null)
+leadMap.put(lead_instance.email+'_'+lead_instance.MobilePhone+'_'+lead_instance.CEE_ProductCode__c+'_'+lead_instance.Product__c,lead_instance);
+if(lead_instance.FormName__c != null && lead_instance.FormID__c != null)
+leadFormMap.put(lead_instance.email+'_'+lead_instance.MobilePhone+'_'+lead_instance.FormName__c+'_'+lead_instance.FormID__c,lead_instance); 
+}
+}        
+for(lead lead_instance : LeadList){
+if(leadMap != null && leadMap.containsKey(lead_instance.email+'_'+lead_instance.MobilePhone+'_'+lead_instance.CEE_ProductCode__c+'_'+lead_instance.Product__c)
+&&(lead_instance.FirstName==null||lead_instance.FirstName=='[Not Provided]'||lead_instance.LastName==null||lead_instance.LastName=='[Not Provided]'||lead_instance.Company==null||lead_instance.Company=='[Not Provided]'||lead_instance.MobilePhone==null||lead_instance.Email==null||lead_instance.CEE_ProductCode__c==null||lead_instance.Product__c==null)){
+if(lead_instance.Counter__c < leadMap.get(lead_instance.email+'_'+lead_instance.MobilePhone+'_'+lead_instance.CEE_ProductCode__c+'_'+lead_instance.Product__c).Counter__c){
+lead_instance.Status = 'Lost';
+lead_instance.CEE_Lead_Status__c = 'Terminated';
+lead_instance.Open_Lead_Sub_Status__c = 'Duplicate';
+}else if(lead_instance.Counter__c > leadMap.get(lead_instance.email+'_'+lead_instance.MobilePhone+'_'+lead_instance.CEE_ProductCode__c+'_'+lead_instance.Product__c).Counter__c){
+for(Lead ld : leadMap.values()){
+ld.Status = 'Lost';
+ld.CEE_Lead_Status__c = 'Terminated';
+ld.Open_Lead_Sub_Status__c = 'Duplicate'; 
+}
+}
+}
+else if(leadMap != null && leadMap.containsKey(lead_instance.email+'_'+lead_instance.MobilePhone+'_'+lead_instance.CEE_ProductCode__c+'_'+lead_instance.Product__c)){
+for(Lead ld : existingLeadsList){
+if(ld.FirstName==null||ld.FirstName=='[Not Provided]'||ld.LastName==null||ld.LastName=='[Not Provided]'||ld.Company==null||ld.Company=='[Not Provided]'||ld.MobilePhone==null||
+ld.Email==null||ld.CEE_ProductCode__c==null||ld.Product__c==null){
+ld.Status = 'Lost';
+ld.CEE_Lead_Status__c = 'Terminated';
+ld.Open_Lead_Sub_Status__c = 'Duplicate'; 
+}
+else{
+lead_instance.Status = 'Lost';
+lead_instance.CEE_Lead_Status__c = 'Terminated';
+lead_instance.Open_Lead_Sub_Status__c = 'Duplicate';
+}
+}
+}
+else if(leadFormMap!=null&&leadFormMap.containsKey(lead_instance.email+'_'+lead_instance.MobilePhone+'_'+lead_instance.FormName__c+'_'+lead_instance.FormID__c)
+&&(lead_instance.FirstName==null||lead_instance.FirstName=='[Not Provided]'||lead_instance.LastName==null||lead_instance.LastName=='[Not Provided]'||lead_instance.Company==null||lead_instance.Company=='[Not Provided]'||lead_instance.MobilePhone==null||
+lead_instance.Email==null||lead_instance.FormName__c==null||lead_instance.FormID__c==null)){
+if(lead_instance.Counter__c < leadFormMap.get(lead_instance.email+'_'+lead_instance.MobilePhone+'_'+lead_instance.FormName__c+'_'+lead_instance.FormID__c).Counter__c){
+lead_instance.Status = 'Duplicate';
+}else if(lead_instance.Counter__c > leadFormMap.get(lead_instance.email+'_'+lead_instance.MobilePhone+'_'+lead_instance.FormName__c+'_'+lead_instance.FormID__c).Counter__c){
+for(Lead ld : leadFormMap.values()){
+ld.Status = 'Duplicate';
+}
+}
+}
+else if(leadFormMap != null && leadFormMap.containsKey(lead_instance.email+'_'+lead_instance.MobilePhone+'_'+lead_instance.FormName__c+'_'+lead_instance.FormID__c)){
+for(Lead ld : existingLeadsList){
+if(ld.FirstName==null||ld.FirstName=='[Not Provided]'||ld.LastName==null||ld.LastName=='[Not Provided]'||ld.Company==null||ld.Company=='[Not Provided]'||ld.MobilePhone==null||
+ld.Email==null||ld.FormName__c==null||ld.FormID__c==null){
+ld.Status = 'Duplicate';
+}
+else{
+lead_instance.Status = 'Duplicate';
+}
+}
+}
+}
+try{
+if(LeadList.size() > 0){
+update LeadList;
+}
+if(existingLeadsList.size() > 0){
+update existingLeadsList;
+}
+if(leadMap.values().size() > 0){
+update leadMap.values();
+}
+if(leadFormMap.values().size() > 0){
+update leadFormMap.values();
+}
+}
+catch(Exception e)
+{
+new LogException().log(e);
+}
+}*/
+    //Future callout to Quantana and getting the UserId of Lead and Updating it accordingly
+    public static void createLeadinQuantana(List<Lead> leadList){
+        for(Lead leadRecord:leadList){
+            if(leadRecord.LeadSource == 'ISB Store Front'){
+                if(leadRecord.LastName!=null && leadRecord.Email!=null && leadRecord.MobilePhone != null && leadRecord.CEE_ProductCode__c !=null){
+                    if(System.IsBatch() == false && System.isFuture() == false){ 
+                        QuantanaAPIcallout.createLeadOnQuantana(leadRecord.Id);
+                    }
+                }
+            }
+        }
+    }
+    
+    //Getting the contacts with the leadreffererEmail and updating the lead with the Contact 
+    public static void UpdateRefferesLead(list<Lead> leadList){
+        Set<String> leadReffererEmail = new Set<String>();
+        Map<String,Id> contactDetailsMap=new Map<String,Id>();
+        for(Lead lead_instance:leadList){
+            if(lead_instance.Referrer_s_Email__c != null && lead_instance.Referrer_s_Email__c != ''){
+                leadreffererEmail.add(lead_instance.Referrer_s_Email__c);
+            }
+        }
+        if(leadreffererEmail.size() > 0){
+            list<contact> contactList = [SELECT id ,ISB_Email_ID__c,Official_Email_ID__c,Personal_Email__c,Email,Personal_Email_ID_1__c,Personal_Email_ID_2__c FROM contact where ISB_Email_ID__c IN :leadreffererEmail OR Official_Email_ID__c IN :leadreffererEmail OR Personal_Email__c IN :leadreffererEmail OR Email IN :leadreffererEmail OR Personal_Email_ID_1__c IN :leadreffererEmail OR Personal_Email_ID_2__c IN :leadreffererEmail];
+            for(Contact contact_instance:contactList){
+                contactDetailsMap.put(contact_instance.ISB_Email_ID__c,contact_instance.Id);
+                contactDetailsMap.put(contact_instance.Personal_Email__c,contact_instance.Id);
+                contactDetailsMap.put(contact_instance.Official_Email_ID__c,contact_instance.Id);
+                contactDetailsMap.put(contact_instance.Email,contact_instance.Id);
+                contactDetailsMap.put(contact_instance.Personal_Email_ID_1__c,contact_instance.Id);
+                contactDetailsMap.put(contact_instance.Personal_Email_ID_2__c,contact_instance.Id);
+            }
+            for(Lead lead_instance:leadList){
+                if(lead_instance.Referrer_s_Email__c != null){
+                    if(contactDetailsMap.get(lead_instance.Referrer_s_Email__c) != NULL){
+                        lead_instance.Contact__c=contactDetailsMap.get(lead_instance.Referrer_s_Email__c);
+                    }else{
+                        lead_instance.Other_Refferal_Email__c = lead_instance.Referrer_s_Email__c ;                       
+                    }
+                }
+            } 
+        } 
+    }
+    //Send email to the candidate when lead status is To be Qualified and CEE Lead status is Could Not Connect
+    public static void leadStatusToBeQualified(Map<Id,Lead> oldLeads, Map<Id,Lead> newLeads){
+        List<Id> leadIdsToUpdate = new List<Id>();
+        for (Lead newLead : newLeads.values()) {
+            Lead oldLead = oldLeads.get(newLead.Id);
+            if (newLead.Status != null && newLead.CEE_Lead_Status__c != null &&newLead.i_am_interested_in_programmes_for__c != Null 
+                && newLead.Status == 'To be Qualified'  
+                && newLead.CEE_Lead_Status__c == 'Could Not Connect' 
+                && (oldLead.i_am_interested_in_programmes_for__c != newLead.i_am_interested_in_programmes_for__c || newLead.CEE_Lead_Status__c != oldLead.CEE_Lead_Status__c) ) {
+                    newLead.Capture_triggered_Date__c = Date.today();
+                    leadIdsToUpdate.add(newLead.Id);
+                }
+        }
+        if(!leadIdsToUpdate.isEmpty()){
+            List<Lead> leadsToUpdate = [SELECT Id, Email,Product__r.BDOwnerEmailid__c,
+                                        Product__r.Name,Product__r.Start_Date__c,FirstName,i_am_interested_in_programmes_for__c,
+                                        LastName,MobilePhone,Product__r.Program_Owner__r.Name,Product__r.BD_Owner_phone_number__c	
+                                        FROM Lead
+                                        WHERE Id IN :leadIdsToUpdate and (RecordTypeId =:leadExedRecordTypeId or RecordTypeId =:leadExedB2BRecordTypeId)];
+            List<Messaging.SingleEmailMessage> emails = new List<Messaging.SingleEmailMessage>();
+            String orgDisplayName = System.Label.OrgWideAddress;
+            OrgWideEmailAddress orgAddress = [SELECT Id, Address, DisplayName FROM OrgWideEmailAddress WHERE Address = :orgDisplayName];
+            for (Lead lead : leadsToUpdate) {
+                if(lead.Product__c != null){
+                    Messaging.SingleEmailMessage email = new Messaging.SingleEmailMessage();
+                    email.setToAddresses(new List<String>{ lead.Email });
+                    email.setSubject('ISB Executive Education – We tried reaching you');
+                    email.setOrgWideEmailAddressId(orgAddress.Id);
+                    if(newLeads.values().i_am_interested_in_programmes_for__c != null && (newLeads.values().i_am_interested_in_programmes_for__c =='Myself' || String.valueOf(newLeads.values().i_am_interested_in_programmes_for__c).contains('team') || String.valueOf(newLeads.values().i_am_interested_in_programmes_for__c).contains('Team'))){
+                        system.debug('in Myself');
+                        String emailBody = 'Hi '+' ' + lead.LastName +
+                            ',<br/><br/>Thank you for expressing interest in the <span class="imp">'+lead.Product__r.Name+'</span> Programme from ISB (Indian School of Business).<br/><br/>' +
+                            'We tried reaching you at '+lead.MobilePhone+' but couldn\'t get through. Please suggest a convenient time for us to connect.<br/><br/>' +
+                            'Feel free to contact me, '+lead.Product__r.Program_Owner__r.Name+', at +91 '+lead.Product__r.BD_Owner_phone_number__c+' or via email at <span class="imp">'+lead.Product__r.BDOwnerEmailid__c+'</span>, ' +
+                            'for any questions about the programme or the application process.<br/><br/>Looking forward to hearing from you soon!<br/><br/>Thanks and Regards,<br/>' +
+                            lead.Product__r.Program_Owner__r.Name+'<br/>'+
+                            'Programme Advisor - ISB Executive Education<br/>'+
+                            'Mobile: '+lead.Product__r.BD_Owner_phone_number__c+'<br/>'+
+                            'Email: '+lead.Product__r.BDOwnerEmailid__c+'<br/>';
+                        email.setHtmlBody(emailBody);
+                        emails.add(email);
+                        email.setReplyTo(lead.Product__r.BDOwnerEmailid__c);
+                        //email.setReplyTo('sharath.neralla@absyz.com');
+                    }else if(newLeads.values().i_am_interested_in_programmes_for__c != null && String.valueOf(newLeads.values().i_am_interested_in_programmes_for__c).contains('organisation') || String.valueOf(newLeads.values().i_am_interested_in_programmes_for__c).contains('Organisation')){
+                        String emailBody = 'Hi '+' ' + lead.LastName +
+                            ',<br/><br/>Thank you for expressing interest in the <span class="imp">'+lead.Product__r.Name+'</span> Programme from ISB (Indian School of Business).<br/><br/>' +
+                            'We tried reaching you at '+lead.MobilePhone+' but couldn\'t get through. Please suggest a convenient time for us to connect.<br/><br/>' +
+                            'Feel free to contact me, Abhilash Philip, at '+'+91 8750828193'+' or via email at <span class="imp">'+'abhilash_philip@isb.edu'+'</span>, ' +
+                            'for any questions about the program or the application process that you or your organization might have.<br/><br/>Looking forward to hearing from you soon!<br/><br/>Thanks and Regards,<br/>Abhilash Philip<br/>Manager - ISB Executive Education<br/>Mobile:+91 8750828193<br/>Email: Abhilash_philip@isb.edu' ;
+                        email.setHtmlBody(emailBody);
+                        emails.add(email);
+                        email.setReplyTo('abhilash_philip@isb.edu');
+                    }
+                }
+            }
+            if(emails.size() > 0){
+                Messaging.sendEmail(emails);
+            }
+        }
+    }
+    //Converting the Lead and mapping the lead to the ExecEdu and contact based on the email and mobile and creating the Opportunity with the Lead details 
+    public static void leadConversionProcessLWP(List<lead> leadList,Map<Id,Lead> newMap,Map<Id,Lead> oldMap){
+        String LWPProductCode = System.label.LWP_Product_Code;
+        Map<Id,Lead> conditionalLeadMap = new Map<Id,Lead>();
+        for(String lead_instanceId:newMap.keySet()){
+            String currentLeadStage = newMap.get(lead_instanceId).Status;
+            String oldLeadStage = oldMap.get(lead_instanceId).Status;
+            String oldleadOpenStatus = oldMap.get(lead_instanceId).CEE_Lead_Status__c;
+            String newleadOpenStatus = newMap.get(lead_instanceId).CEE_Lead_Status__c;
+            if((currentLeadStage != oldLeadStage || oldleadOpenStatus != newleadOpenStatus) && currentleadStage == 'In Play' && newleadOpenStatus == 'Applied' && newMap.get(lead_instanceId).CEE_ProductCode__c == LWPProductCode ){
+                conditionalLeadMap.put(lead_instanceId,newMap.get(lead_instanceId));
+            }
+            
+        }
+        if(!conditionalLeadMap.isEmpty()){
+            Product2 getProgram = [Select Id,Family,Financial_Year__c from Product2 where ProductCode = :System.label.LWP_Product_Code];
+            list<Database.LeadConvert> leadConverts = new list<Database.LeadConvert>();
+            List<Id> oppIds = new List<Id>();
+            List<Id> contactIds = new List<Id>();
+            List<String> leadEmailList = new List<String>();
+            List<String> leadMobileList = new List<String>();
+            Map<String,Contact> contactMobileMap = new Map<String,Contact>();
+            Map<String,Contact> contactEmailMap = new Map<String,Contact>();
+            Map<String,Lead> leadMap = new Map<String,Lead>();
+            Pricebook2 getPriceBook = [Select id from Pricebook2 where Name = 'Standard Price Book'];
+            LeadStatus convertStatus = [SELECT Id, MasterLabel,IsConverted FROM LeadStatus WHERE IsConverted=true LIMIT 1];
+            Account account_record = [Select Id from Account where Name = 'ExecEdu'];
+            for(Lead lead_instance:conditionalLeadMap.values()){
+                leadEmailList.add(lead_instance.Email);
+                leadMobileList.add(lead_instance.MobilePhone);
+            }
+            List<Contact> getContact = [Select id,Email,MobilePhone from Contact where Email IN : leadEmailList or MobilePhone IN : leadMobileList];        
+            if(getContact.size() > 0){
+                for(Contact contact_instance:getContact){
+                    if(contact_instance.Email != null)
+                        contactEmailMap.put(contact_instance.Email,contact_instance);
+                    if(contact_instance.MobilePhone != null)
+                        contactMobileMap.put(contact_instance.MobilePhone,contact_instance);
+                }
+            }
+            for(Lead lead_instance:leadList){
+                Database.LeadConvert lc = new database.LeadConvert();
+                lc.setLeadId(lead_instance.Id);
+                lc.setAccountId(account_record.Id);
+                lc.setOpportunityName(lead_instance.LastName);
+                lc.setDoNotCreateOpportunity(false);
+                lc.setConvertedStatus(convertStatus.MasterLabel);
+                if(contactEmailMap.containsKey(lead_instance.Email)){
+					System.debug('LWP Conversion: Duplicate Contact found for Lead ID ' + lead_instance.Id + '. Matched existing Contact ID ' + contactEmailMap.get(lead_instance.Email).Id + ' by Email: ' + lead_instance.Email);
+                    lc.setContactId(contactEmailMap.get(lead_instance.Email).Id);
+                    leadConverts.add(lc);
+                }
+                else if(contactMobileMap.containsKey(lead_instance.MobilePhone)){
+                    System.debug('LWP Conversion: Duplicate Contact found for Lead ID ' + lead_instance.Id + '. Matched existing Contact ID ' + contactMobileMap.get(lead_instance.MobilePhone).Id + ' by Mobile: ' + lead_instance.MobilePhone);
+                    lc.setContactId(contactMobileMap.get(lead_instance.MobilePhone).Id);
+                    leadConverts.add(lc);
+                }
+                else{
+                    System.debug('LWP Conversion: No duplicate Contact found for Lead ID ' + lead_instance.Id + '. A new Contact will be created.');
+                    leadConverts.add(lc);
+                } 
+            }
+            if(leadConverts.size() > 0){
+                Database.LeadConvertResult[] lcr = Database.convertLead(leadConverts);
+                for(Database.leadConvertResult l:lcr){
+                    oppIds.add(l.getOpportunityId());
+                    contactIds.add(l.getContactId());
+                }
+            }
+            List<Contact> updateContacts = [Select Id,RecordTypeId from Contact where Id IN :contactIds];
+            List<Opportunity> updateOpportunity = [Select Id,RecordTypeId from Opportunity where Id IN :oppIds];
+            List<Lead> getLeads = [Select Id,ConvertedOpportunityId,ConvertedContactId,Email,MobilePhone,FirstName,LastName from Lead where ConvertedOpportunityId IN :oppIds];
+            for(Lead lead_instance:getLeads){
+                leadMap.put(lead_instance.ConvertedOpportunityId,lead_instance);
+            }
+            for(Opportunity opportunity_instance:updateOpportunity){
+                if(leadMap.containsKey(opportunity_instance.Id)){
+                    Lead getleadDetails = leadMap.get(opportunity_instance.Id);
+                    if(getleadDetails.FirstName != null && getleadDetails.FirstName != ''){
+                        opportunity_instance.Name = getleadDetails.FirstName + ' ' + getleadDetails.LastName;
+                        opportunity_instance.APP_First_Name__c = getleadDetails.FirstName;
+                        opportunity_instance.APP_Last_Name__c = getleadDetails.LastName;
+                    }
+                    else{
+                        opportunity_instance.Name = getleadDetails.LastName;
+                        opportunity_instance.APP_Last_Name__c = getleadDetails.LastName;
+                    }
+                    opportunity_instance.StageName = 'Applied';
+                    opportunity_instance.APP_Product__c = getProgram.id;
+                    opportunity_instance.APP_Email__c = getleadDetails.Email;
+                    opportunity_instance.APP_MobilePhone__c = getleadDetails.MobilePhone;
+                    opportunity_instance.APP_Applicationformstatus__c = '100%  Completed';
+                    opportunity_instance.CloseDate = Date.newInstance(2024, 5, 30);
+                    opportunity_instance.RecordTypeId = opportunityExecEdId;
+                    opportunity_instance.APP_Contact__c = getleadDetails.ConvertedContactId;
+                    opportunity_instance.Pricebook2Id = getPriceBook.Id;
+                    opportunity_instance.Financial_Year__c = getProgram.Financial_Year__c;
+                }
+            }
+            for(Contact contact_instance:updateContacts){
+                contact_instance.RecordTypeId = contactExecEdRecordTypeId;    
+            }
+            if(!updateContacts.isEmpty()){
+                update updateContacts;
+            }
+            if(!updateOpportunity.isEmpty()){
+                update updateOpportunity;  
+            }
+        }
+    }   
+    //sending email to GMAC chair lead after lead Insertion
+    public static void sendGMACEmail(List<Lead> newLead){
+        EmailTemplate EmailTemplateLIST = new EmailTemplate();
+        Id grantsRecTypeId = Schema.SObjectType.Lead.getRecordTypeInfosByDeveloperName().get(System.Label.GrantsRecordTypeName).getRecordTypeId();	
+        List<OrgWideEmailAddress> lstEmailAddress=[select Id from OrgWideEmailAddress WHERE Address=:System.label.unlock_email_Asha];
+        EmailTemplateLIST = [SELECT Id,Name,Subject,Body,HtmlValue FROM EmailTemplate WHERE DeveloperName = 'GMAC_Chair_New_Granter_Email'];
+        
+        for(Lead lead_Instance : newLead){
+            if(lead_Instance.RecordTypeId == grantsRecTypeId && lead_Instance.Existing_New_Grantor__c == 'New Grantor'){
+                set<string> emailIdSet=new set<String>();
+                list<string> toAddressList = (System.label.EmailForApprovals).split(',');
+                LIST<Messaging.SingleEmailMessage> emailList = new LIST<Messaging.SingleEmailMessage>(); 
+                Messaging.SingleEmailMessage message = new Messaging.SingleEmailMessage();
+                if(toAddressList.size()>0)
+                    message.toAddresses =new LIST<String>(toAddressList);
+                message.setTreatTargetObjectAsRecipient(false);
+                message.setSaveAsActivity(true);
+                message.setOrgWideEmailAddressId(lstEmailAddress[0].Id);
+                EmailTemplateLIST.HTMLValue = EmailTemplateLIST.HTMLValue.replace('{!LeadLink}',URL.getSalesforceBaseUrl().toExternalForm()+'/'+lead_Instance.Id);
+                EmailTemplateLIST.HTMLValue = EmailTemplateLIST.HTMLValue.replace(']]>','');
+                message.setPlainTextBody(EmailTemplateLIST.Body);
+                message.setSubject(EmailTemplateLIST.Subject);
+                message.setHtmlBody(EmailTemplateLIST.HTMLValue);
+                if(toAddressList.size()>0) {
+                    emailList.add(message);
+                }
+                try{
+                    Messaging.SendEmailResult[] results = Messaging.sendEmail(emailList);
+                }
+                catch(exception e){
+                    new LogException().log(e);
+                    
+                }
+            }
+        }
+    }
+    //Conevrting the lead based the new or existing Lead. 
+    public static void leadConvertionGrants(Map<Id,Lead> oldLeadList,List<Lead> leadList,String newOrExisting) {
+        Set<String> leadCompany = New Set<String>();
+        Set<String> leadEmail = New Set<String>();
+        Map<String,Account> companyAccoountMap = New Map<String,Account>();
+        Map<String,Contact> emailContactMap = New Map<String,Contact>();
+        Map<String,Id> emailContactWithAccountIdMap = New Map<String,Id>();
+        Map<Id,Id> contactIdWithUserIdMap = New Map<Id,Id>();
+        Boolean hasContact = true;
+        LeadStatus convertStatus = [SELECT Id, MasterLabel,IsConverted FROM LeadStatus WHERE IsConverted = true AND MasterLabel='Qualified'];
+        List<Lead> grantsLeadList = new List<Lead>();
+        for(Lead leadRec:leadList){
+            Lead oldLead = new lead();
+            if(newOrExisting == 'New'){
+                oldLead = oldLeadList.get(leadRec.Id);
+                if((((leadRec.GMAC_Approved__c !=oldLead.GMAC_Approved__c)&&(leadRec.GMAC_Approved__c ==True))||((leadRec.F_R_Deputy_Dean__c !=oldLead.F_R_Deputy_Dean__c)&&(leadRec.F_R_Deputy_Dean__c ==True))) && (leadRec.RecordTypeId == grantsRecordTypeIdForLead)){
+                    grantsLeadList.add(leadRec);
+                }
+            }else if(leadRec.Existing_New_Grantor__c == 'Existing Grantor'){
+                grantsLeadList.add(leadRec);
+            }
+        }
+        if(grantsLeadList.size()>0){
+            for (Lead leadRec: grantsLeadList) {
+                leadCompany.add(leadRec.Company);
+                leadEmail.add(leadRec.Email);
+            }
+            List<Account> accList = [Select Id,Name,RecordTypeId,createddate FROM Account WHERE Name IN:leadCompany AND RecordTypeId =: grantsRecordTypeIdForAccount ORDER BY createddate DESC Limit 1];
+            for(Account acc:accList){
+                companyAccoountMap.put(acc.Name, acc);
+            }
+            List<Contact> conList = [Select Id,Email, RecordTypeId,AccountId FROM Contact WHERE Email IN:leadEmail AND RecordTypeId =: grantsRecordTypeIdForContact ORDER BY createddate DESC Limit 1];
+            for(Contact con:conList){
+                emailContactMap.put(con.Email, con);
+                emailContactWithAccountIdMap.put(con.Email,con.AccountId);
+            }
+            Profile communityProfile = [SELECT Id,Name FROM Profile WHERE Name ='Custom  Community Profile' LIMIT 1];
+            List<User> userLi = [Select Id,Email,contactId  FROM user WHERE Email IN:leadEmail AND ProfileId =:communityProfile.Id];
+            for(user us:userLi){
+                contactIdWithUserIdMap.put(us.contactId, us.Id);
+            }   
+            
+            List<Database.LeadConvert> leadConverts = new List<Database.LeadConvert>();
+            for (Lead lead: leadList) {
+                if(!lead.IsConverted){
+                    if ((lead.Background_Verification_Cleared__c ==true && lead.Grant_Officer_Approved__c ==true && lead.Legal_Officer_Approved__c==true && lead.Finance_Officer_Approved__c ==true) || lead.Existing_New_Grantor__c=='Existing Grantor') {
+                        Database.LeadConvert lc = new Database.LeadConvert();
+                        String oppName = lead.Name;
+                        lc.setLeadId(lead.Id);
+                        lc.setOpportunityName(oppName);
+                        lc.setDoNotCreateOpportunity(false);
+                        lc.setConvertedStatus(convertStatus.MasterLabel);
+                        if(accList.size() > 0){
+                            if(companyAccoountMap.containsKey(lead.Company)){
+                                lc.setAccountId(companyAccoountMap.get(lead.Company).Id);
+                            }
+                        }
+                        
+                        if(conList.size() > 0 ){
+                            if(emailContactMap.containsKey(lead.Email)){
+                                hasContact =  false;
+                                lc.setContactId(emailContactMap.get(lead.Email).Id);
+                                lc.setAccountId(emailContactWithAccountIdMap.get(lead.Email));
+                                
+                            }
+                        }
+                        else if(conList.size() > 0 && accList.size() > 0){
+                            if(emailContactMap.containsKey(lead.Email)){
+                                hasContact =  false;
+                                lc.setContactId(emailContactMap.get(lead.Email).Id);                                
+                            }
+                        }
+                        leadConverts.add(lc);
+                    }
+                    
+                }
+            }
+            Set<Id> accListAfterLeadConversion = New Set<Id>();
+            Set<Id> conListAfterLeadConversion = New Set<Id>();
+            Set<Id> oppListAfterLeadConversion = New Set<Id>();
+            Set<Id> leadIdAfterConversion = new set<Id>();
+            Map<Id,Id> oppMapWithContacts = New Map<Id,Id>();
+            Map<Id,Lead> oppIdMapWithLead = new Map<Id,Lead>();
+            if (!leadConverts.isEmpty()) {
+                try{
+                    List<Database.LeadConvertResult> lcr = Database.convertLead(leadConverts);
+                    For(Database.LeadConvertResult result :lcr){
+                        accListAfterLeadConversion.add(result.getAccountId());
+                        conListAfterLeadConversion.add(result.getContactId());
+                        oppListAfterLeadConversion.add(result.getOpportunityId());
+                        leadIdAfterConversion.add(result.getLeadId());
+                        oppMapWithContacts.put(result.getOpportunityId(),result.getContactId());
+                    }
+                    List<Account> updateAccounts =[Select Id,RecordTypeId FROM Account WHERE Id =: accListAfterLeadConversion];
+                    For(Account acc:updateAccounts){
+                        acc.RecordTypeId = grantsRecordTypeIdForAccount;
+                    }
+                    List<Id> insertedUserId = new List<Id>();
+                    List<Contact> updateContacts =[Select Id,RecordTypeId,email,FirstName,LastName FROM Contact WHERE Id =: conListAfterLeadConversion];
+                    if(hasContact){
+                        List<User> insertUserList = new List<User>();
+                        For(Contact conRecord : updateContacts){
+                            conRecord.RecordTypeId = grantsRecordTypeIdForContact;
+                            User newCommunityUser = new User(
+                                UserName = conRecord.email+System.Label.UserNameCommuityGrants,
+                                FirstName = conRecord.FirstName,
+                                LastName = conRecord.LastName,
+                                email = conRecord.email,
+                                ContactId = conRecord.Id,
+                                ProfileId = communityProfile.Id,
+                                EmailEncodingKey = 'UTF-8',
+                                TimeZoneSidKey = 'Asia/Kolkata',
+                                LocaleSidKey = 'en_IN',
+                                LanguageLocaleKey = 'en_US'
+                            );
+                            newCommunityUser.CommunityNickname = conRecord.email.substringBefore('@');
+                            if(newCommunityUser.FirstName != Null){
+                                newCommunityUser.Alias = newCommunityUser.LastName.substring(0, 1)+newCommunityUser.FirstName.substring(0, 4);
+                            }else if(newCommunityUser.FirstName == Null){
+                                Integer result = newCommunityUser.FirstName.length();
+                                if(result >=4){
+                                    newCommunityUser.Alias = newCommunityUser.LastName.substring(0, 4);
+                                }else{
+                                    newCommunityUser.Alias = newCommunityUser.LastName.substring(0, result);
+                                }
+                            }
+                            insertUserList.add(newCommunityUser); 
+                        }
+                        if(insertUserList.size()>0){
+                            List<Database.SaveResult> userList = Database.insert(insertUserList,false);
+                            for(Database.SaveResult sr:userList){
+                                if(sr.isSuccess()){
+                                    insertedUserId.add(sr.getId());
+                                }
+                            }
+                        }
+                    }
+                    List<Lead> convertedLeads = [Select Id , Donor_Email__c , Sponsor_Name__c ,ConvertedOpportunityId  from Lead where ID IN :leadIdAfterConversion];
+                    for(Lead lead:convertedLeads){
+                        oppIdMapWithLead.put(lead.ConvertedOpportunityId , lead);
+                    }
+                    List<Opportunity> updateOpportunityList =[Select Id,RecordTypeId,AccountId,Community_User__c FROM Opportunity WHERE Id IN: oppListAfterLeadConversion];
+                    For(Opportunity opp:updateOpportunityList){
+                        Lead getLead = oppIdMapWithLead.get(opp.Id);
+                        opp.RecordTypeId = grantsRecordTypeIdForOpportunity;
+                        opp.StageName = 'Open';
+                        if(getLead != null){
+                            opp.Sponsor_Email__c = getLead.Donor_Email__c;
+                        }
+                        opp.Primary_Contact__c =oppMapWithContacts.get(opp.Id); 
+                        if(hasContact){
+                            opp.Community_User__c = insertedUserId[0];
+                        }else{
+                            opp.Community_User__c = contactIdWithUserIdMap.get(oppMapWithContacts.get(opp.Id));
+                        }
+                    }
+                    
+                    if(updateAccounts.size()>0){
+                        update updateAccounts;
+                    }
+                    if(hasContact){
+                        if(updateContacts.size()>0){
+                            update updateContacts;
+                        }
+                    }
+                    if(updateOpportunityList.size()>0){
+                        update updateOpportunityList;
+                    }
+                }
+                catch(Exception e){
+                    new LogException().Module('Lead Convertion Module').log(e);
+                    System.debug(e);
+                    
+                }
+            }
+        }
+        
+    }
+    
+    //Used for Grants and aslo sends email for different email templates 
+    public static void sendEmail(Id lead,string emailTemplate){
+        EmailTemplate EmailTemplateLIST = new EmailTemplate();
+        List<OrgWideEmailAddress> lstEmailAddress=[select Id from OrgWideEmailAddress WHERE Address=:System.label.unlock_email_Asha];
+        EmailTemplateLIST = [SELECT Id,Name,Subject,Body,HtmlValue FROM EmailTemplate WHERE DeveloperName = :emailTemplate ];
+        set<string> emailIdSet=new set<String>();
+        list<string> toAddressList = (System.label.EmailForApprovals).split(',');
+        for(string str : toAddressList){
+            emailIdSet.add(str);
+        }
+        
+        LIST<Messaging.SingleEmailMessage> emailList = new LIST<Messaging.SingleEmailMessage>();    // LIST to store email messages
+        Messaging.SingleEmailMessage message = new Messaging.SingleEmailMessage();
+        if(emailIdSet.size()>0)
+            message.toAddresses =new LIST<String>(emailIdSet);
+        message.setTreatTargetObjectAsRecipient(false);
+        message.setSaveAsActivity(true);
+        message.setOrgWideEmailAddressId(lstEmailAddress[0].Id);
+        EmailTemplateLIST.HTMLValue = EmailTemplateLIST.HTMLValue.replace('{!Lead.Id}',lead);
+        EmailTemplateLIST.HTMLValue = EmailTemplateLIST.HTMLValue.replace('{!Lead.Link}',URL.getSalesforceBaseUrl().toExternalForm()+'/'+lead);
+        message.setPlainTextBody(EmailTemplateLIST.Body);
+        message.setSubject(EmailTemplateLIST.Subject);
+        message.setHtmlBody(EmailTemplateLIST.HTMLValue);
+        if(emailIdSet.size()>0) {
+            emailList.add(message);
+        }
+        try{
+            Messaging.SendEmailResult[] results = Messaging.sendEmail(emailList);
+        }
+        catch(exception e){
+            new LogException().log(e);
+        }
+    }
+    //with specific conditions increasing the count value by 1. Which hepls the assigning the users on round-robin basis.
+    public static void countOnlineProgramLeads(List<Lead> newList){
+        
+        List<Lead> lastCreatedOnlineProgramLead = [Select Id,Online_Program_Lead_Number__c from Lead where Online_Program_Lead_Number__c!= null and recordTypeId=:OnlineProgramRecordTypeId Order By Online_Program_Lead_Number__c desc LIMIT 1];
+        if(!lastCreatedOnlineProgramLead.isEmpty()){
+            for(Lead lead_instance:newList){
+                if(lead_instance.FormName__c!=NULL){
+                    if(lead_instance.FormName__c.contains('ISBO-')){
+                        if(lastCreatedOnlineProgramLead[0].Online_Program_Lead_Number__c>0){
+                            lead_instance.Online_Program_Lead_Number__c = lastCreatedOnlineProgramLead[0].Online_Program_Lead_Number__c+1;
+                        }
+                        else{
+                            lead_instance.Online_Program_Lead_Number__c = 1;
+                        }
+                    }
+                }
+                else if(lead_instance.LeadSource!=NULL){
+                    if(lead_instance.LeadSource.contains('ISB Store Front')){
+                        if(lastCreatedOnlineProgramLead[0].Online_Program_Lead_Number__c>0){
+                            lead_instance.Online_Program_Lead_Number__c = lastCreatedOnlineProgramLead[0].Online_Program_Lead_Number__c+1;
+                        }
+                        else{
+                            lead_instance.Online_Program_Lead_Number__c = 1;
+                        }
+                    }
+                }
+                else if(lead_instance.Quantana_User_Id__c != NULL){
+                    if(lastCreatedOnlineProgramLead[0].Online_Program_Lead_Number__c>0){
+                        lead_instance.Online_Program_Lead_Number__c = lastCreatedOnlineProgramLead[0].Online_Program_Lead_Number__c+1;
+                    }
+                    else{
+                        lead_instance.Online_Program_Lead_Number__c = 1;
+                    }
+                }
+            }
+        }
+    }
+    //Updating the lead with the Junk recordType when there are any alphabets in the mobile Number 
+    public static void updateToJunkLeads(List<Lead> newList){
+        for(Lead le:newList){
+            if(le.MobilePhone != NULL && le.MobilePhone != '' && le.Junk_Lead__c==true){
+                le.RecordTypeId = junkleadrecordTypeId;
+            }
+        }    
+    }
+
+
+    public static void checkMobileEmailForJunkStatus(List<Lead> newList, Map<Id, Lead> oldMap){
+
+        List<String> listRecordRef = new List<String>();
+        
+        try{
+
+        List<Lead> admissionsLeadList = new List<Lead>();
+        
+        for(Lead l : newList){
+            listRecordRef.add(l.Id);
+            String admProg;
+            if(oldMap != null){
+                Lead oldLead = oldMap.get(l.Id);
+                admProg = l.Admissions_Program__c != null ? l.Admissions_Program__c : oldLead.Admissions_Program__c;
+            }
+            else{
+                admProg = l.Admissions_Program__c != null ? l.Admissions_Program__c : '';
+            }
+
+            if (admProg == null) admProg = '';
+
+            if(l.RecordTypeId == AdmissionRecordTypeId &&
+                (admProg.contains('PGPPro') ||
+                admProg.contains('PGPMAX') ||
+                admProg.contains('MFAB')
+                )
+            ){
+                admissionsLeadList.add(l);
+            }
+        }
+
+        if(oldMap == null){
+            checkMobileEmailForJunkLeads(admissionsLeadList, null);
+
+        }
+        else{
+            checkMobileEmailForJunkLeads(admissionsLeadList, oldMap);
+        }
+
+        }
+    	catch(Exception e){
+        	ErrorLogHandler.createLog('LeadTriggerHandler.checkMobileEmailForJunkStatus()','Apex Class',e,String.join(listRecordRef, ', '),null,null);
+    	}
+
+
+    }
+
+
+    public static void checkMobileEmailForJunkLeads(List<Lead> leadList, Map<Id, Lead> oldMap) {
+
+        List<String> listRecordRef = new List<String>();
+        try{
+
+        for (Lead l : leadList) {
+
+            listRecordRef.add(l.Id);
+
+            Boolean markAsJunk = false;
+            Boolean validEmail = true;
+            Boolean validMobile = true;
+
+            // Email Checks
+            if (!String.isBlank(l.Email)) {
+                String email = l.Email.trim().toLowerCase();
+
+                List<String> parts = email.split('@');
+                String localPart = (parts.size() > 0) ? parts[0] : '';
+                String domainPart = (parts.size() > 1) ? parts[1] : '';
+
+                // Rule: local part length < 3 → junk
+                if (localPart.length() < 3) {
+                    validEmail = false;
+                }
+
+                // Rule: suspicious keywords in local part
+                List<String> badKeywords = new List<String>{'abc','test','asdf','fake'};
+                for (String k : badKeywords) {
+                    if (localPart.contains(k)) {
+                        validEmail = false;
+                        break;
+                    }
+                }
+
+                // Rule: domain blacklist
+                List<String> badDomains = new List<String>{'yopmail.com','tempmail.com','mailinator.com'};
+                for (String d : badDomains) {
+                    if (domainPart.contains(d)) {
+                        validEmail = false;
+                        break;
+                    }
+                }
+
+                // Rule: suspicious TLD
+                if (email.endsWith('.zip')  || email.endsWith('.review')  || email.endsWith('.country') ||
+                    email.endsWith('.kim')  || email.endsWith('.cricket') || email.endsWith('.science') ||
+                    email.endsWith('.work') || email.endsWith('.party')   || email.endsWith('.gp')      ||
+                    email.endsWith('.link') || email.endsWith('.top')     || email.endsWith('.xyz')     ||
+                    email.endsWith('.cn')   || email.endsWith('.sbs')     || email.endsWith('.quest')   ||
+                    email.endsWith('.support') || email.endsWith('.bond') || email.endsWith('.finance') ||
+                    email.endsWith('.pics') || email.endsWith('.best')    || email.endsWith('.guru')    ||
+                    email.endsWith('.su')   || email.endsWith('.life')    || email.endsWith('.cfd')     ||
+                    email.endsWith('.do')   || email.endsWith('.digital') || email.endsWith('.buzz')    ||
+                    email.endsWith('.monster') || email.endsWith('.site') || email.endsWith('.pro')     ||
+                    email.endsWith('.space')|| email.endsWith('.cc')      || email.endsWith('.vip')     ||
+                    email.endsWith('.info') || email.endsWith('.pizza')   || email.endsWith('.bid')     ||
+                    email.endsWith('.win')  || email.endsWith('.ooo')     || email.endsWith('.cyou')    ||
+                    email.endsWith('.wiki') || email.endsWith('.plus')    || email.endsWith('.wang')    ||
+                    email.endsWith('.shop') || email.endsWith('.ru')      || email.endsWith('.online')  ||
+                    email.endsWith('.today')|| email.endsWith('.icu')     || email.endsWith('.tk')      ||
+                    email.endsWith('.ga')   || email.endsWith('.ml')      || email.endsWith('.cf')      ||
+                    email.endsWith('.gq')   || email.endsWith('.host')    || email.endsWith('.pw')      ||
+                    email.endsWith('.club') || email.endsWith('.es') ||
+                    email.endsWith('.ccc') || email.endsWith('.hyg') || email.endsWith('.ckl')) {
+                    validEmail = false;
+                }
+
+
+                // Rule: repeated chars (aaa, ccc)
+                if (Pattern.matches('.*([A-Za-z])\\1{2,}.*', localPart)) {
+                    validEmail = false;
+                }
+                
+                // Rule: 6+ consonants in a row
+                Pattern p = Pattern.compile('[bcdfghjklmnpqrstvwxyz]{6,}');
+                Matcher m = p.matcher(localPart);
+                if (m.find()) {
+                    validEmail = false;
+                }
+
+                List<String> typoDomains = new List<String>{
+                    'gmial.com','gamil.com','gnail.com','gmaill.com','gmall.com','gmal.com',
+                    'gmail.co','gmail.cm','gmail.om','gmail.net','gmail.org'
+                };
+
+                for (String td : typoDomains) {
+                    // exact match OR match a subdomain like mail.gamil.com
+                    if (domainPart == td || domainPart.endsWith('.' + td)) {
+                        validEmail = false;
+                        System.debug('Invalid: typo domain matched -> ' + td + ' (domainPart=' + domainPart + ')');
+                        break;
+                    }
+                }
+
+
+                // Starts or ends with hyphen
+                if (localPart.startsWith('-') || localPart.endsWith('-')) {
+                    validEmail = false;
+                }
+                // Starts with digits
+                if (Pattern.compile('^\\d+').matcher(localPart).find()) {
+                    validEmail = false;
+                }
+                // Double hyphens anywhere
+                if (localPart.contains('--')) {
+                    validEmail = false;
+                }
+
+                if(oldMap != null){
+                //If zero bounce says valid + not junk → valid email
+                    if (validEmail == true && l.Zero_bounce_status__c != 'valid') {
+                        validEmail = false;
+                    }
+                    if(l.Zero_bounce_status__c != 'valid'){
+                        validEmail = false;
+                    }
+
+                }
+
+            }
+            else{
+                // Email is blank
+                validEmail = false;
+            }
+
+
+            // Mobile Checks
+            if (!String.isBlank(l.MobilePhone)) {
+                Boolean isIndia = false;
+                String numericMobile = l.MobilePhone.replaceAll('[^0-9]', '');
+
+                if (l.MobilePhone.startsWith('+91') ) {
+                    numericMobile = l.MobilePhone.substring(3).replaceAll('[^0-9]', '');
+                    // if(numericMobile.length() == 10){
+                        isIndia = true;
+                    // }
+                }
+                else if (l.MobilePhone.startsWith('91') ) {
+                    numericMobile = l.MobilePhone.substring(2).replaceAll('[^0-9]', '');
+                    // if(numericMobile.length() == 10){
+                        isIndia = true;
+                    // }
+                }
+                else if(!l.MobilePhone.startsWith('+') && !l.MobilePhone.startsWith('91')
+                        && numericMobile.length() == 10){
+                    isIndia = true;
+                }
+                else if(l.MobilePhone.startsWith('(') || l.MobilePhone.startsWith('[') ){
+                    if(numericMobile.length() == 10 && !numericMobile.startsWith('91')){
+                        isIndia = true;
+                    }
+                    else if(numericMobile.length() == 12 && numericMobile.startsWith('91')){
+                        numericMobile = numericMobile.substring(2);
+                        isIndia = true;
+                    }
+                }
+                else{
+                    isIndia = false;
+                }
+
+                // Rule: length validation
+                if ((isIndia && numericMobile.length() != 10) ||
+                    (!isIndia && numericMobile.length() >= 12)) {
+                    validMobile = false;
+                } else {
+
+                    // Rule: consecutive 7+ digits
+                    if (Pattern.matches('.*(\\d)\\1{6,}.*', numericMobile)) {
+                        validMobile = false;
+                    }
+
+                    // Rule: sequential patterns
+                    if (numericMobile.contains('0123456789') ||
+                        numericMobile.contains('1234567890') ||
+                        numericMobile.contains('9876543210')) {
+                        validMobile = false;
+                    }
+
+                }
+            } else {
+                validMobile = false;
+            }
+
+            if(validEmail == true && validMobile == true){                
+                if(l.Status == System.Label.StatusJunk || l.Status == System.Label.StatusValidEmailInvalidNumber || l.Status == System.Label.StatusValidNumberInvalidEmail){
+                    l.Status = System.Label.Open;
+                    l.CEE_Lead_Status__c = '';
+                    l.Open_Lead_Sub_Status__c = '';
+
+                }
+            }
+            if (validEmail == true && validMobile == false) {
+                l.Status = System.Label.StatusValidEmailInvalidNumber;
+                l.CEE_Lead_Status__c = System.Label.StatusValidEmailInvalidNumber;
+                l.Open_Lead_Sub_Status__c = System.Label.StatusValidEmailInvalidNumber;
+            }
+            else if (validMobile == true && validEmail == false) {
+                l.Status = System.Label.StatusValidNumberInvalidEmail;
+                l.CEE_Lead_Status__c = System.Label.StatusValidNumberInvalidEmail;
+                l.Open_Lead_Sub_Status__c = System.Label.StatusValidNumberInvalidEmail;
+            }
+            else if (validMobile == false && validEmail == false) {
+                l.Status = System.Label.StatusJunk;
+                l.CEE_Lead_Status__c = System.Label.StatusInappropriatedDetails;
+            }
+            else if (String.isBlank(l.MobilePhone) && String.isBlank(l.Email)) {
+                l.Status = System.Label.StatusJunk;
+                l.CEE_Lead_Status__c = System.Label.StatusInappropriatedDetails;
+            }
+
+    }
+
+        }
+    	catch(Exception e){
+        	ErrorLogHandler.createLog('LeadTriggerHandler.checkMobileEmailForJunkLeads()','Apex Class',e,String.join(listRecordRef, ', '),null,null);
+    	}
+
+
+
+    }
+
+
+    
+    //updating lead recordtype and lead financial year based on condition.
+    public static void beforeInsert(List<Lead> leadList){
+        Map<String,User> userDetailsMap= new Map<String,User>();
+        List<User> userList = [Select Id,Email From User WHERE Email = :System.Label.AbhishekEmail OR Email = :System.Label.SujathaEmail];
+        if(!userList.isEmpty()){
+            for(User user_instance:userList){
+                userDetailsMap.put(user_instance.Email,user_instance);
+            }
+        }
+        for(lead lead_instance : leadList){
+            if(lead_instance.CEE_Lead_Status__c != null && lead_instance.Open_Lead_Sub_Status__c != null){
+                lead_instance.Current_Status__c = lead_instance.Status + '-' + lead_instance.CEE_Lead_Status__c + '-' + lead_instance.Open_Lead_Sub_Status__c;
+            }
+            else if(lead_instance.CEE_Lead_Status__c != null){
+                lead_instance.Current_Status__c = lead_instance.Status + '-' + lead_instance.CEE_Lead_Status__c;
+            }
+            else{
+                lead_instance.Current_Status__c = lead_instance.Status;
+            }
+            lead_instance.FormID_Tableau__c = String.valueOf(lead_instance.FormID__c);
+            lead_instance.Lead_Created_Date__c = System.NOW();
+            if(lead_instance.RecordTypeId !=grantsRecordTypeIdForLead){
+                if(lead_instance.RecordTypeId != OnlineProgramRecordTypeId){
+                    if(lead_instance.i_am_interested_in_programmes_for__c != null && lead_instance.Designation__c != null){
+                        if((lead_instance.i_am_interested_in_programmes_for__c == 'Myself' || String.valueOf(lead_instance.i_am_interested_in_programmes_for__c).contains('team') || String.valueOf(lead_instance.i_am_interested_in_programmes_for__c).contains('Team')) && lead_instance.LeadSource != 'ISB Store Front' && lead_instance.RecordTypeId != AMPrecordTypeId){
+                            lead_instance.RecordTypeId = leadExedRecordTypeId;
+                        }  
+                        else if(userDetailsMap.get(System.Label.AbhishekEmail).Id != null && lead_instance.i_am_interested_in_programmes_for__c != null && (String.valueOf(lead_instance.i_am_interested_in_programmes_for__c).contains('organisation') || String.valueOf(lead_instance.i_am_interested_in_programmes_for__c).contains('Organisation'))  && lead_instance.LeadSource != 'ISB Store Front' && lead_instance.Question1__c!='Years Of Experience' && lead_instance.LI_Hidden_Field_1__c!=NULL && !lead_instance.FormName__c.contains('ISBO-')){
+                            lead_instance.RecordTypeId = leadExedB2BRecordTypeId;
+                        }
+                        else if(userDetailsMap.get(System.Label.AbhishekEmail).Id != null && lead_instance.i_am_interested_in_programmes_for__c != null && (String.valueOf(lead_instance.i_am_interested_in_programmes_for__c).contains('organisation') || String.valueOf(lead_instance.i_am_interested_in_programmes_for__c).contains('Organisation'))  && lead_instance.LeadSource != 'ISB Store Front' && lead_instance.LI_Hidden_Field_1__c==NULL){
+                            lead_instance.RecordTypeId = leadExedB2BRecordTypeId;
+                        }
+                    }
+                }
+            }
+        }
+        list<recordtype> recordTypeList = [Select Id from recordtype where developername='CEE'];
+        set<Id> recordTypeIdSet = new set<Id>();
+        integer i=0;
+        if(recordTypeList.size() > 0){
+            for(recordtype rcType : recordTypeList){
+                recordTypeIdSet.add(rcType.id);
+            }
+        }
+        for(lead lead_instance : leadList){
+            lead_instance.FormID_Tableau__c = String.valueOf(lead_instance.FormID__c);
+            if(lead_instance.RecordTypeId !=grantsRecordTypeIdForLead){
+                if(recordTypeIdSet.contains(lead_instance.RecordTypeId)){
+                    lead_instance.CEE_Lead__c = 'Yes';
+                }
+                if(lead_instance.firstname!=null || lead_instance.lastname!=null || lead_instance.email!=null || lead_instance.company!=null || lead_instance.mobilephone!=null || lead_instance.UTM_Source__c!=null || lead_instance.CEE_ProductCode__c!=null){
+                    if(lead_instance.firstname != null)
+                        i = i+1;
+                    if(lead_instance.LastName!='[not provided]')
+                        i = i+1;
+                    if(lead_instance.Company!='[not provided]')
+                        i = i+1;
+                    if(lead_instance.Email!=null)
+                        i = i+1;
+                    if(lead_instance.MobilePhone!=null)
+                        i = i+1;
+                    if(lead_instance.CEE_ProductCode__c!=null)
+                        i = i+1;
+                    if(lead_instance.FormName__c != null)
+                        i = i+1;
+                    if(lead_instance.FormID__c != null)
+                        i = i+1;
+                    lead_instance.Counter__c = i;
+                }
+                if((lead_instance.UTM_Source__c == 'Facebook' && lead_instance.CEE_ProductCode__c!=null) || ((lead_instance.CEE_ProductCode__c!=null)&& lead_instance.RecordType.Name =='ExecEd HFP') || (lead_instance.Lead_Type__c == 'B2C' && lead_instance.UTM_Source__c == 'LinkedIn' && lead_instance.RecordType.Name == 'Admissions'))
+                    lead_instance.RecordTypeId = leadExedRecordTypeId;
+                if(lead_instance.LeadSource == 'ISB Store Front')
+                    lead_instance.RecordTypeId = OnlineProgramRecordTypeId;
+                if(lead_instance.RecordTypeId == leadExedRecordTypeId || lead_instance.RecordTypeId == leadExedB2BRecordTypeId || lead_instance.RecordTypeId == leadExedHFPRecordTypeId){
+                    if(lead_instance.Financial_Year__c!=null || lead_instance.Financial_Year__c!=''){
+                        lead_instance.Financial_YearT__c = lead_instance.Financial_Year__c;
+                    }
+                }
+            }  
+            
+        }	
+        
+        // Map<Id, Id> termActiveRoundMap = new Map<Id,Id>();
+        // Set<Id> termSet = new Set<Id>();
+        // Datetime todaysDateTime = System.now();
+        
+        // for(Lead leadObj :leadList){
+        //     if(leadObj.cohort_Id__c != null){
+        //         termSet.add(leadObj.cohort_Id__r.Id);
+        //     }
+        // }
+        
+        // List<ISB_Rounds__c> rounds = [Select Id, Term__c From ISB_Rounds__c Where Term__c IN: termSet AND Enrolment_Start_Date__c <=: todaysDateTime AND Enrolment_End_Date__c >=: todaysDateTime];
+        
+        // for(ISB_Rounds__c roundObj :rounds){
+        //     termActiveRoundMap.put(roundObj.Term__c, roundObj.id);
+        // }
+        
+        // for(lead lead_instance : leadList){
+        //     if(lead_instance.cohort_Id__c != null){
+        //         if(lead_instance.Round_when_lead_created__c == null){
+        //             if(termActiveRoundMap.get(lead_instance.cohort_Id__r.Id) != null){
+        //                 lead_instance.Round_when_app_submitted__c = termActiveRoundMap.get(lead_instance.cohort_Id__r.Id);
+        //             }
+        //         }
+        //     }
+        // }
+        
+        
+    }
+    
+    //Assigning lead owner based on the i_am_interested_in_programmes_for__c feild.
+    public static void beforeUpdate(List<Lead> newList,Map<Id,Lead> oldMap,Map<Id,Lead> newMap){
+        Map<String,User> userDetailsMap= new Map<String,User>();
+        set<string> leadIdSet = new set<string>();
+        Map<String, Product2> prodCodesMap = new Map<String, Product2>();
+        List<User> userList = [Select Id,Email From User WHERE Email = :System.Label.B2BLeadOwner OR Email =:System.Label.AbhishekEmail OR Email = :System.Label.SujathaEmail OR (Email =:System.Label.PushkarEmail and Profile.Name = 'Digital Learning') OR (Email =:System.Label.DefaultB2BOwner)];
+        Boolean isApexAssignmentEnabled = Boolean.valueOf(System.Label.Enable_Apex_Lead_Assignment);
+        if(!userList.isEmpty()){
+            for(User user_instance:userList){
+                userDetailsMap.put(user_instance.Email,user_instance);
+            }
+        }
+        for(lead lead_instance : newList){
+            if(lead_instance.CEE_Lead_Status__c != null && lead_instance.Open_Lead_Sub_Status__c != null){
+                lead_instance.Current_Status__c = lead_instance.Status + '-' + lead_instance.CEE_Lead_Status__c + '-' + lead_instance.Open_Lead_Sub_Status__c;
+            }
+            else if(lead_instance.CEE_Lead_Status__c != null){
+                lead_instance.Current_Status__c = lead_instance.Status + '-' + lead_instance.CEE_Lead_Status__c;
+            }
+            else{
+                lead_instance.Current_Status__c = lead_instance.Status;
+            }
+            lead_instance.FormID_Tableau__c = String.valueOf(lead_instance.FormID__c);
+            if(lead_instance.RecordTypeId !=grantsRecordTypeIdForLead){
+                if(lead_instance.RecordTypeId != OnlineProgramRecordTypeId){
+                    if(lead_instance.i_am_interested_in_programmes_for__c != null && lead_instance.Designation__c != null){
+                        if((lead_instance.i_am_interested_in_programmes_for__c == 'Myself' || String.valueOf(lead_instance.i_am_interested_in_programmes_for__c).contains('team') || String.valueOf(lead_instance.i_am_interested_in_programmes_for__c).contains('Team')) && lead_instance.LeadSource != 'ISB Store Front' &&  lead_instance.RecordTypeId != AMPrecordTypeId &&  (!lead_instance.FormName__c.contains('AMP')  || lead_instance.FormName__c.contains('GAMP') )){
+                            lead_instance.RecordTypeId = leadExedRecordTypeId;
+                            if(lead_instance.Selected_Program_BD_Owner__c != null){
+                                lead_instance.OwnerId = lead_instance.Selected_Program_BD_Owner__c;
+                            }
+                            else{
+                                lead_instance.OwnerId = userDetailsMap.get(System.Label.SujathaEmail).Id;
+                            }
+                        }  
+                        else if(userDetailsMap.get(System.Label.AbhishekEmail).Id != null && lead_instance.i_am_interested_in_programmes_for__c != null && (String.valueOf(lead_instance.i_am_interested_in_programmes_for__c).contains('organisation') || String.valueOf(lead_instance.i_am_interested_in_programmes_for__c).contains('Organisation'))  && lead_instance.LeadSource != 'ISB Store Front' && lead_instance.Question1__c!='Years Of Experience' && lead_instance.LI_Hidden_Field_1__c!=NULL && !lead_instance.FormName__c.contains('ISBO-')&& (!lead_instance.FormName__c.contains('AMP')  || lead_instance.FormName__c.contains('GAMP') )){
+                            lead_instance.RecordTypeId = leadExedB2BRecordTypeId;
+                            if(lead_instance.Selected_Program_BD_Owner__c != null){
+                                lead_instance.OwnerId = userDetailsMap.get(System.Label.AbhishekEmail).Id; 
+                            }
+                            else{
+                                lead_instance.OwnerId = userDetailsMap.get(System.Label.SujathaEmail).Id;
+                            }
+                        }
+                        else if(userDetailsMap.get(System.Label.AbhishekEmail).Id != null && lead_instance.i_am_interested_in_programmes_for__c != null && (String.valueOf(lead_instance.i_am_interested_in_programmes_for__c).contains('organisation') || String.valueOf(lead_instance.i_am_interested_in_programmes_for__c).contains('Organisation'))  && lead_instance.LeadSource != 'ISB Store Front' && lead_instance.LI_Hidden_Field_1__c==NULL && (!lead_instance.FormName__c.contains('AMP')  || lead_instance.FormName__c.contains('GAMP') )){
+                            lead_instance.RecordTypeId = leadExedB2BRecordTypeId;
+                            if(lead_instance.Selected_Program_BD_Owner__c != null){
+                                lead_instance.OwnerId = userDetailsMap.get(System.Label.AbhishekEmail).Id; 
+                            }
+                            else{
+                                lead_instance.OwnerId = userDetailsMap.get(System.Label.SujathaEmail).Id;
+                            }
+                        }
+                    }
+                    if(lead_instance.RecordTypeId == leadExedRecordTypeId || lead_instance.RecordTypeId == leadExedB2BRecordTypeId || lead_instance.RecordTypeId == leadExedHFPRecordTypeId){
+                        if(lead_instance.Financial_Year__c!=null || lead_instance.Financial_Year__c!=''){
+                            lead_instance.Financial_YearT__c = lead_instance.Financial_Year__c;
+                        }
+                    }
+                }
+                if(lead_instance.Time_Taken__c == null && oldMap.get(lead_instance.id).status == 'Open' && lead_instance.status != 'Open'){
+                    long dt1 = lead_instance.CreatedDate.getTime();
+                    long dt2 = datetime.now().getTime();
+                    Long milliseconds = dt2 - dt1;
+                    Long seconds = milliseconds / 1000;
+                    Long minutes = seconds / 60;
+                    lead_instance.Time_Taken__c = minutes;
+                }
+                if(lead_instance.LI_Hidden_Field_1__c!=null||lead_instance.LI_Hidden_Field_2__c!=null||lead_instance.LI_Hidden_Field_3__c!=null||lead_instance.LI_Hidden_Field_4__c!=null||lead_instance.LI_Hidden_Field_5__c!=null){
+                    leadIdSet.add(lead_instance.CEE_ProductCode__c);
+                }
+                if(lead_instance.CEE_ProductCode__c != null && lead_instance.CEE_ProductCode__c != oldMap.get(lead_instance.Id).CEE_ProductCode__c)
+                    leadIdSet.add(lead_instance.CEE_ProductCode__c);
+                if(lead_instance.LeadSource == 'ISB Store Front'){
+                    lead_instance.RecordTypeId = OnlineProgramRecordTypeId;
+                    if((lead_instance.i_am_interested_in_programmes_for__c == 'Myself' || String.valueOf(lead_instance.i_am_interested_in_programmes_for__c).contains('team') || String.valueOf(lead_instance.i_am_interested_in_programmes_for__c).contains('Team')) && isApexAssignmentEnabled){
+                        if(lead_instance.Selected_Program_BD_Owner__c != null)
+                            lead_instance.OwnerId = lead_instance.Selected_Program_BD_Owner__c;
+                        else
+                            lead_instance.OwnerId = userDetailsMap.get(System.Label.PushkarEmail).Id;
+                    }
+                    else if((String.valueOf(lead_instance.i_am_interested_in_programmes_for__c).contains('organisation') || String.valueOf(lead_instance.i_am_interested_in_programmes_for__c).contains('Organisation'))){
+                        if(userDetailsMap.get(System.Label.B2BLeadOwner).Id != null){
+                            lead_instance.OwnerId = userDetailsMap.get(System.Label.B2BLeadOwner).Id; 
+                        }
+                        else{
+                            lead_instance.OwnerId = userDetailsMap.get(System.Label.PushkarEmail).Id;
+                        }
+                    }
+                    
+                    if(lead_instance.Group_Lead__c == true){
+                        if(lead_instance.B2B_Program_BD_Owner__c != null){
+                            lead_instance.OwnerId = lead_instance.B2B_Program_BD_Owner__c;
+                        }
+                         /*Added By: Eswar - Myridius 
+						Checking if the owner has been re-assigned from the default b2b owner  */
+                        else if(lead_instance.ownerId != oldMap.get(lead_instance.id).ownerId && oldMap.get(lead_instance.id).ownerId == userDetailsMap.get(System.Label.DefaultB2BOwner).Id ){
+                           
+                           System.debug('Inside If owner change statement' + lead_instance.ownerId);
+                           lead_instance.Lead_Owner_Reassigned__c = true;
+                            
+                        }
+                        else if(!lead_instance.Lead_Owner_Reassigned__c){
+                            lead_instance.OwnerId = userDetailsMap.get(System.Label.DefaultB2BOwner).Id;
+                        }
+                            
+                    }
+                }
+                if(oldMap.get(lead_instance.Id).CEE_ProductCode__c != newMap.get(lead_instance.Id).CEE_ProductCode__c)
+                    lead_instance.Cohort_Changed_Date__c = DateTime.NOW();
+                if(oldMap.get(lead_instance.Id).Status != newMap.get(lead_instance.Id).Status)
+                    lead_instance.Lead_Previous_Stage__c = oldMap.get(lead_instance.Id).Status;
+                
+            }
+        }
+        if(!leadIdSet.isEmpty()){
+            list<Product2> productList = [Select Id,ProductCode,Program_Owner__c From Product2 Where ProductCode IN :leadIdSet];
+            if(productList.size() > 0){
+                for(Product2 product : productList){
+                    prodCodesMap.put(product.ProductCode,product);
+                }
+            }
+        }
+        for(Lead lead_instance : newList){
+            if(prodCodesMap != null && prodCodesMap.containsKey(lead_instance.CEE_ProductCode__c) && prodCodesMap.get(lead_instance.CEE_ProductCode__c) != null){
+                lead_instance.Product__c = prodCodesMap.get(lead_instance.CEE_ProductCode__c).Id;
+            }
+            
+            // if(lead_instance.cohort_Id__c != null){
+            //     if(lead_instance.Round_when_lead_created__c == null){
+            //         Datetime todaysDateTime = System.now();
+            //         ISB_Rounds__c round = [Select Id From ISB_Rounds__c Where Term__c =: lead_instance.cohort_Id__c AND Enrolment_Start_Date__c <=: todaysDateTime AND Enrolment_End_Date__c >=: todaysDateTime limit 1];
+            
+            //         if(round != null){
+            //             lead_instance.Round_when_lead_created__c = round.Id;
+            //         }
+            //     }
+            // }
+            
+        }
+    }
+    //Used for sending emails to Approver based on the stage
+    public static void sendEmailToGrantsOffice(List<Lead> newLeads, Map<Id, Lead> oldLeadMap) {
+        Id grantsRecTypeId = Schema.SObjectType.Lead.getRecordTypeInfosByDeveloperName().get(System.Label.GrantsRecordTypeName).getRecordTypeId();
+        
+        for (Lead leadRecord : newLeads) {
+            String emailTemplate = null;
+            
+            if (leadRecord.RecordTypeId == grantsRecTypeId && oldLeadMap.get(leadRecord.Id).Background_Verification_Cleared__c == false && leadRecord.Background_Verification_Cleared__c ==true) {
+                emailTemplate = 'Custom_Email_Template_for_Grant_Office_Lead';
+            }
+            
+            if (leadRecord.RecordTypeId == grantsRecTypeId && leadRecord.Grant_Officer_Approved__c == true && oldLeadMap.get(leadRecord.Id).Grant_Officer_Approved__c == false &&
+                leadRecord.Legal_Officer_Approved__c == false && leadRecord.Grant_Office_Rejected__c == false) {
+                    emailTemplate = 'Custom_Email_Template_for_Legal_office_Lead';
+                }
+            
+            if (leadRecord.RecordTypeId == grantsRecTypeId && leadRecord.Legal_Officer_Approved__c && oldLeadMap.get(leadRecord.Id).Legal_Officer_Approved__c == false &&
+                leadRecord.Finance_Officer_Approved__c == false && leadRecord.Legal_Rejected__c == false) {
+                    emailTemplate = 'Custom_Email_Template_for_Finance_Office_Lead';
+                }
+            
+            if (emailTemplate != null) {
+                sendEmail(leadRecord.Id, emailTemplate);
+            }
+        }
+    }
+    public static void handleLeadInsert(List<Lead> newLeads) {
+        if(newLeads.size()>0){
+            checkEmptyNames(newLeads);
+        }
+    }
+    
+    private static void checkEmptyNames(List<Lead> newLeads) {
+        Id grantsRecTypeId = Schema.SObjectType.Lead.getRecordTypeInfosByDeveloperName().get(System.Label.GrantsRecordTypeName).getRecordTypeId();
+        for (Lead newLead : newLeads) {
+            
+            //Integer firstNameLength = newLead.FirstName.length();
+            if (String.isBlank(newLead.FirstName) &&newLead.RecordTypeId== grantsRecTypeId){
+                newLead.addError('First Name cannot be empty');
+            } else if( newLead.RecordTypeId== grantsRecTypeId&&newLead.FirstName.length() <=3 &&(!String.isBlank(newLead.FirstName))) {
+                newLead.addError('First Name should be more than 3 characters.');
+            }
+        }
+    }
+    public static void sendEmailToGmacFrDean(List<Lead> newLeads) {
+        String emailTemplate;
+        for(Lead leadRecord : newLeads) {
+            
+            if(leadRecord.RecordTypeId == grantsRecordTypeIdForLead && leadRecord.Existing_New_Grantor__c == 'New Grantor') {
+                if(leadRecord.GMAC_Chair_F_R_Dean__c != null && leadRecord.GMAC_Chair_F_R_Dean__c == 'GMAC Chair') {
+                    emailTemplate = 'Custom_Email_Template_for_F_R_Dean_Lead';
+                } else if(leadRecord.GMAC_Chair_F_R_Dean__c != null && leadRecord.GMAC_Chair_F_R_Dean__c == 'F&R Dean') {
+                    emailTemplate = 'Custom_Email_Template_for_GMAC_Chair_Lead';
+                }
+                
+                if(emailTemplate != null) {
+                    sendEmail(leadRecord.Id, emailTemplate);
+                }
+            }
+        }
+    }
+    
+    
+    
+    public static void updateProductCode(List<Lead> newLeads){
+        for(Lead leadObj : newLeads){
+            if(leadObj.CEE_ProductCode__c == null && leadObj.Product__c!=null){
+                leadObj.CEE_ProductCode__c = [Select Id,ProductCode From Product2 where Id =:leadObj.Product__c].ProductCode;
+            }
+        }
+    }
+    
+    public static void updateMQLSQL(List<Lead> newLeads){
+        for(Lead leadObj : newLeads){
+            System.debug('Status'+leadObj.Status+'open status'+leadObj.CEE_Lead_Status__c+'open sub status'+leadObj.Open_Lead_Sub_Status__c);
+            if(leadObj.Status == 'Lost' && leadObj.CEE_Lead_Status__c == 'Terminated' && (leadObj.Open_Lead_Sub_Status__c == 'Test' || leadObj.Open_Lead_Sub_Status__c == 'Junk')){
+                System.debug('Inside false');
+                leadObj.MQL__c = false;
+            }
+            else{
+                System.debug('Inside true');
+                leadObj.MQL__c = true;
+            }
+            if(leadObj.Status == 'Lost' && (leadObj.CEE_Lead_Status__c == 'Terminated' || leadObj.CEE_Lead_Status__c == 'Rejected')){
+                leadObj.SQL__c = false;
+            }
+            else{
+                leadObj.SQL__c = true;
+            }
+        }
+    }
+    
+    public static void createLEH(List<Lead> leadList){
+        List<Associated_Lead__c> associatedLeadsToInsert = new List<Associated_Lead__c>();
+        Id recordTypeExecEd = Schema.SObjectType.Lead.getRecordTypeInfosByName().get('ExecEd').getRecordTypeId();
+        Id recordTypeExecEdB2B = Schema.SObjectType.Lead.getRecordTypeInfosByName().get('ExecEd B2B').getRecordTypeId();
+        Id recordTypeOnlineProgram = Schema.SObjectType.Lead.getRecordTypeInfosByName().get('Online Program').getRecordTypeId();
+        Id recordTypeAdmissions = Schema.SObjectType.Lead.getRecordTypeInfosByName().get('Admissions').getRecordTypeId();
+        Id recordTypeAMP = Schema.SObjectType.Lead.getRecordTypeInfosByName().get('AMP Admissions').getRecordTypeId();
+        Id recordTypePGP = Schema.SObjectType.Lead.getRecordTypeInfosByName().get('PGP').getRecordTypeId();
+        for(Lead lead:leadList){
+            if(lead.RecordTypeId == recordTypeExecEd || lead.RecordTypeId == recordTypeExecEdB2B || lead.RecordTypeId == recordTypeAdmissions || lead.RecordTypeId == recordTypeAMP || lead.RecordTypeId == recordTypePGP || lead.RecordTypeId == recordTypeOnlineProgram || !string.isBlank(lead.Admissions_Program__c)){
+                Associated_Lead__c associatedLead = createAssociatedLead(lead);
+                associatedLeadsToInsert.add(associatedLead);
+            }
+        }
+        if(associatedLeadsToInsert.size() > 0){
+            insert associatedLeadsToInsert;
+        }
+    }
+    
+    private static Associated_Lead__c createAssociatedLead(Lead existingLead) {
+        Associated_Lead__c associatedLead = new Associated_Lead__c();
+        List<Product2> getProduct = new List<Product2>();
+        if(existingLead.CEE_ProductCode__c != null &&existingLead.CEE_ProductCode__c != ''){
+            getProduct = [Select Id from Product2 where ProductCode =:existingLead.CEE_ProductCode__c Order by CreatedDate Desc limit 1];
+        }
+        associatedLead.Email__c = existingLead.Email;
+        associatedLead.Contact_Number__c = existingLead.Refined_Mobile_Number__c;
+        associatedLead.Master_Lead__c = existingLead.Id;
+        if(existingLead.FirstName != null){
+            associatedLead.Name = existingLead.FirstName + ' ' + existingLead.LastName;
+        }
+        else{
+            associatedLead.Name = existingLead.LastName;
+        }
+        associatedLead.Designation__c = existingLead.Designation__c;
+        associatedLead.is_Master_Lead__c = true;
+        associatedLead.Mobile_Country_Code__c = existingLead.Mobile_Country_Code__c;
+        associatedLead.Company__c = existingLead.Company;
+        associatedLead.Years_of_Work_Experience__c = existingLead.Years_of_Work_Exeperience__c;
+        associatedLead.City__c = existingLead.City__c;
+        associatedLead.UTM_Source__c = existingLead.UTM_Source__c;
+        associatedLead.UTM_Term__c = existingLead.UTM_Term__c;
+        associatedLead.UTM__c = existingLead.UTM__c;
+        associatedLead.Record_Type__c = existingLead.RecordType.Name;
+        associatedLead.Lead_Source__c = existingLead.LeadSource;
+        associatedLead.Start_Date__c = existingLead.Product_Start_Date__c;
+        associatedLead.End_Date__c = existingLead.Product_End_Date__c;
+        associatedLead.adgroupname__c = existingLead.adgroupname__c;
+        associatedLead.Form__c = existingLead.Form__c;
+        associatedLead.Advertiser_Account__c = existingLead.Advertiser_Account__c;
+        associatedLead.Campaign__c = existingLead.Campaign__c;
+        associatedLead.campaignname__c = existingLead.campaignname__c;
+        associatedLead.completeurl__c = existingLead.completeurl__c;
+        associatedLead.creative__c = existingLead.creative__c;
+        associatedLead.device__c = existingLead.device__c;
+        associatedLead.devicemodel__c = existingLead.devicemodel__c;
+        associatedLead.FullName__c = existingLead.FullName__c;
+        associatedLead.GCLID__c = existingLead.GCLID__c;
+        associatedLead.i_am_interested_in_programmes_for__c = existingLead.i_am_interested_in_programmes_for__c;
+        associatedLead.keyword__c = existingLead.keyword__c;
+        associatedLead.Lead_Type__c = existingLead.Lead_Type_Formula__c;
+        associatedLead.matchtype__c = existingLead.matchtype__c;
+        associatedLead.network__c = existingLead.network__c;
+        associatedLead.Open_Lead_Sub_Status__c = existingLead.Open_Lead_Sub_Status__c;
+        associatedLead.CEE_Lead_Status__c = existingLead.CEE_Lead_Status__c;
+        associatedLead.Personal_City__c = existingLead.Personal_City__c;
+        associatedLead.Personal_State__c = existingLead.Personal_State__c;
+        associatedLead.CEE_ProductCode__c = existingLead.CEE_ProductCode__c;
+        associatedLead.Query__c = existingLead.Query__c;
+        associatedLead.Query1__c = existingLead.Query1__c;
+        associatedLead.Query2__c = existingLead.Query2__c;
+        associatedLead.Query3__c = existingLead.Query3__c;
+        associatedLead.Query4__c = existingLead.Query4__c;
+        associatedLead.Query5__c = existingLead.Query5__c;
+        associatedLead.Remarks__c = existingLead.Description;
+        associatedLead.Lead_Status__c = existingLead.Status;
+        associatedLead.target__c = existingLead.target__c;
+        associatedLead.term__c = existingLead.term__c;
+        associatedLead.UTMCampaign__c = existingLead.UTMCampaign__c;
+        associatedLead.utm_content__c = existingLead.utm_content__c;
+        associatedLead.Webinar_Time_Spent__c = existingLead.Webinar_Time_Spent__c;
+        associatedLead.Programme__c = existingLead.Programme__c;
+        associatedLead.Alternate_Mobile_Number__c = existingLead.Mobile_Number__c;
+        associatedLead.Click_to_Dial_Response__c = existingLead.Click_to_Dial_Response__c;
+        associatedLead.City_PGP__c = existingLead.City_PGP__c;
+         //added by sankeerthana ISB-3501
+        if (existingLead.Eventbrite_event_attended__c == true) {
+            associatedLead.Eventbrite_event_attended__c = true;
+            }
+        if(getProduct.size() > 0){
+            associatedLead.Product__c = getProduct[0].Id;
+        }
+        associatedLead.FormID__c = existingLead.FormID__c;
+        associatedLead.Question__c = existingLead.Question__c;
+        associatedLead.Question1__c = existingLead.Question1__c;
+        associatedLead.Question2__c = existingLead.Question2__c;
+        associatedLead.Question3__c = existingLead.Question3__c;
+        associatedLead.Question4__c = existingLead.Question4__c;
+        associatedLead.Question5__c = existingLead.Question5__c;
+        associatedLead.FormName__c = existingLead.FormName__c;
+        associatedLead.Personal_Country__c = existingLead.Personal_Country__c;
+        associatedLead.Refined_Mobile_Number__c = existingLead.Refined_Mobile_Number__c;   
+        associatedLead.Cohort__c = existingLead.Cohort__c;
+        associatedLead.Office_Phone__c = existingLead.Phone;
+        associatedLead.Lead_Owner__c = existingLead.OwnerId;
+        associatedLead.Quarter_Programme__c = existingLead.Quarter_Programme__c;
+        associatedLead.MQL__c = existingLead.MQL__c;
+        associatedLead.SQL__c = existingLead.SQL__c;
+        associatedLead.Program_Type__c = existingLead.Program_Type__c;
+        associatedLead.Programme_Fee__c = existingLead.Programme_Fee__c;
+        associatedLead.Paid_Organic__c = existingLead.Paid_Organic__c;
+        associatedLead.Batch__c = existingLead.Batch__c;
+        associatedLead.Cycle__c = existingLead.Cycle__c;
+        associatedLead.Check_for_Mobile__c = existingLead.Check_for_Mobile__c;
+        associatedLead.LI_Hidden_Field_5__c = existingLead.LI_Hidden_Field_5__c;
+        associatedLead.placement__c = existingLead.placement__c;
+        //Online Program
+        associatedLead.Program_display_Name__c = existingLead.Program_display_Name__c;
+        associatedLead.Lead_user_Id__c = existingLead.Lead_user_Id__c;
+        associatedLead.Old_Product_Code_Transferred__c = existingLead.Old_Product_Code_Transferred__c;
+        associatedLead.Free_Lesson__c = existingLead.Free_Lesson__c;
+        associatedLead.Response_from_Quantana__c = existingLead.Response_from_Quantana__c;
+        associatedLead.Quantana_User_Id__c = existingLead.Quantana_User_Id__c;
+        
+        associatedLead.Have_Taken_the_GAMT_or_GRE__c = existingLead.GMAT_GRE_Taken__c;
+        associatedLead.Would_you_like_to_know_more_about_PGP__c = existingLead.What_you_would_like_to_know_more__c;
+        associatedLead.Are_you_palnning_to_apply_pgp_this_year__c = existingLead.Are_you_planning_to_apply_PGP_this_year__c;
+        associatedLead.Pgp_application_round__c = existingLead.PGP_Application_Round__c;
+        associatedLead.GRE_Score__c = existingLead.GRE_Score__c;
+        associatedLead.GMAT_Score__c = String.valueOf(existingLead.GMAT_Score__c);
+        associatedLead.Do_you_have_a_family_business__c = existingLead.Do_you_have_a_Family_Business__c;
+        associatedLead.Industry_1__c = existingLead.Industry__c;
+        associatedLead.Industry_2__c = existingLead.Industry;
+        associatedLead.Eventbrite_event_attended__c = existingLead.Eventbrite_event_attended__c;
+        associatedLead.Eventbrite_ID__c = existingLead.Eventbrite_ID__c;
+        associatedLead.Number_of_Participants__c = existingLead.Number_of_Participants__c;
+        associatedLead.Group_Lead__c= existingLead.Group_Lead__c;
+        if(existingLead.Application__c != null){
+            associatedLead.Application__c = existingLead.Application__c;
+        }
+        
+        
+        
+        if(existingLead.Lead_Created_Date__c == null){
+            associatedLead.Lead_Created_Date__c = existingLead.CreatedDate;
+        }
+        else associatedLead.Lead_Created_Date__c = existingLead.Lead_Created_Date__c;
+        return associatedLead;
+    }
+    
+    public static void leadMerge(List<lead> newLeads){
+        Id recordTypeExecEd = Schema.SObjectType.Lead.getRecordTypeInfosByName().get('ExecEd').getRecordTypeId();
+        Id recordTypeExecEdB2B = Schema.SObjectType.Lead.getRecordTypeInfosByName().get('ExecEd B2B').getRecordTypeId();
+        Id recordTypeOnlineProgram = Schema.SObjectType.Lead.getRecordTypeInfosByName().get('Online Program').getRecordTypeId();
+        Id recordTypeAdmissions = Schema.SObjectType.Lead.getRecordTypeInfosByName().get('Admissions').getRecordTypeId();
+        Id recordTypeAMP = Schema.SObjectType.Lead.getRecordTypeInfosByName().get('AMP Admissions').getRecordTypeId();
+        System.debug('NEWLEADS'+newLeads[0].CEE_ProductCode__c);
+        Set<String> newEmails = new Set<String>();
+        Set<String> newPhoneNumbers = new Set<String>();
+        Set<String> newIds = new Set<String>();
+        Set<String> oldIds = new Set<String>();
+        Set<String> oldLeadIds = new Set<String>();
+        String newProduct;
+        String newProductCode;
+        String newAcademicProgram;
+        String newLastLeadName;
+        Boolean groupLead;
+        Id recordtypeNewLead;
+
+        for (Lead newLead : newLeads) {
+            System.debug('New Lead:' + newLead);
+            if (newLead.Email != null) {
+                newEmails.add(newLead.Email);
+            }
+            if (newLead.Phone != null) {
+                newPhoneNumbers.add(newLead.Refined_Mobile_Number__c);
+            }
+            if (newLead.Id != null) {
+                newIds.add(newLead.Id);
+            }
+            newProduct = newLead.Product__c;
+            newProductCode = newLead.CEE_ProductCode__c;
+            newAcademicProgram = newLead.Admissions_Program__c;
+            recordtypeNewLead = newLead.RecordTypeId;
+            newLastLeadName = newLead.lastname;
+            groupLead = newLead.Group_Lead__c;
+            //System.debug('product code'+newProductCode);
+        }
+        
+        
+        Map<String, Lead> existingLeadsByEmail = new Map<String, Lead>();
+        Map<String, Lead> existingLeadsByPhoneNumber = new Map<String, Lead>();
+        Map<String, Opportunity> map_leadIdByConvertedOpportunity = new Map<String, Opportunity>();
+        Map<String, List<Associated_Lead__c>> map_leadIdByAssociatedLead = new Map<String, List<Associated_Lead__c>>();
+        List<Associated_Lead__c> getOldAssociatedLead = new List<Associated_Lead__c>();
+        List<Lead> existingLeadsList = new List<Lead>();
+        List<Lead> admissionsLeadCheck = [Select Id,Name,Refined_Mobile_Number__c,Email,adgroupname__c,isConverted,Advertiser_Account__c,Mobile_Number__c,Cohort__c,Lead_Created_Date__c,
+                                          Application__c, Application_Completion__c, Application_Stage__c, Application_Sub_Stage__c, Eventbrite_ID__c,hed__Citizenship__c,Campaign__c,campaignname__c,City__c,City_PGP__c,Click_to_Dial_Response__c,completeurl__c,Company,Phone,Admissions_Program__c,
+                                          creative__c,CreatedDate,Designation__c,device__c,devicemodel__c,FormID__c,FormName__c,FullName__c,Form__c,GCLID__c,i_am_interested_in_programmes_for__c,
+                                          keyword__c,LeadSource,Status,Lead_Type__c,Mobile_Country_Code__c,network__c,CEE_Lead_Status__c,Selected_Program_BD_Owner__c,
+                                          Open_Lead_Sub_Status__c,Personal_City__c,Personal_Country__c,Personal_State__c,Product__c,CEE_ProductCode__c,Programme__c,RecordTypeId,RecordType.Name,
+                                          Query__c,Query1__c,Query2__c,Query3__c,Query4__c,Query5__c,Question__c,Question1__c,Question2__c,Question3__c,placement__c,LI_Hidden_Field_5__c,Check_for_Mobile__c,Cycle__c,
+                                          Batch__c,Question4__c,Question5__c,Description,target__c,term__c,UTMCampaign__c,utm_content__c,UTM__c,UTM_Source__c,UTM_Term__c,matchtype__c,
+                                          Webinar_Time_Spent__c,Years_of_Work_Exeperience__c,Product_Start_Date__c,Product_End_Date__c,OwnerId,Paid_Organic__c,Quarter_Programme__c,MQL__c,SQL__c,Program_Type__c,Programme_Fee__c,
+                                          Program_display_Name__c,Lead_user_Id__c,Old_Product_Code_Transferred__c,Free_Lesson__c,Response_from_Quantana__c,Quantana_User_Id__c,Eventbrite_event_attended__c from Lead where ((Refined_Mobile_Number__c IN:newPhoneNumbers OR Email IN : newEmails) AND (Id NOT IN : newIds) AND (Admissions_Program__c =:newAcademicProgram) and Admissions_Program__c != null AND isConverted = false)];
+        System.debug('Test1158'+admissionsLeadCheck);
+        if(admissionsLeadCheck.size() > 0 ){
+            existingLeadsList = admissionsLeadCheck;
+        }
+        else if(recordtypeNewLead == recordTypeExecEd){
+            existingLeadsList = [Select Id,Name,MobilePhone,Refined_Mobile_Number__c,isConverted,Admissions_Program__c,LastName,Email,adgroupname__c,Advertiser_Account__c,Mobile_Number__c,Cohort__c,Lead_Created_Date__c,
+                                 Campaign__c,campaignname__c,City__c,City_PGP__c,Click_to_Dial_Response__c,completeurl__c,Company,Phone,
+                                 creative__c,CreatedDate,Designation__c,device__c,devicemodel__c,FormID__c,FormName__c,FullName__c,Form__c,GCLID__c,i_am_interested_in_programmes_for__c,
+                                 keyword__c,LeadSource,Status,Lead_Type__c,Mobile_Country_Code__c,network__c,CEE_Lead_Status__c,Selected_Program_BD_Owner__c,
+                                 Open_Lead_Sub_Status__c,Personal_City__c,Personal_Country__c,Personal_State__c,Product__c,CEE_ProductCode__c,Programme__c,RecordTypeId,RecordType.Name,
+                                 Query__c,Query1__c,Query2__c,Query3__c,Query4__c,Query5__c,Question__c,Question1__c,Question2__c,Question3__c,
+                                 Question4__c,Question5__c,Description,target__c,term__c,UTMCampaign__c,utm_content__c,UTM__c,UTM_Source__c,UTM_Term__c,matchtype__c,placement__c,LI_Hidden_Field_5__c,Check_for_Mobile__c,Cycle__c,Batch__c,
+                                 Webinar_Time_Spent__c,Years_of_Work_Exeperience__c,Product_Start_Date__c,Product_End_Date__c,OwnerId,Paid_Organic__c,Quarter_Programme__c,MQL__c,SQL__c,Program_Type__c,Programme_Fee__c,
+                                 Program_display_Name__c,Lead_user_Id__c,Old_Product_Code_Transferred__c,Free_Lesson__c,Response_from_Quantana__c,Quantana_User_Id__c,Eventbrite_event_attended__c From Lead Where ((Refined_Mobile_Number__c IN:newPhoneNumbers OR Email IN : newEmails) AND (Id NOT IN : newIds) AND (CEE_ProductCode__c =:newProductCode) AND CEE_ProductCode__c != null  AND (RecordTypeId =:recordTypeExecEd)) order by CreatedDate desc Limit 1];
+        }
+        else if(recordtypeNewLead == recordTypeExecEdB2B){
+            existingLeadsList = [Select Id,Name,MobilePhone,Refined_Mobile_Number__c,Admissions_Program__c,isConverted,LastName,Email,adgroupname__c,Advertiser_Account__c,Mobile_Number__c,Cohort__c,Lead_Created_Date__c,
+                                 Campaign__c,campaignname__c,City__c,City_PGP__c,Click_to_Dial_Response__c,completeurl__c,Company,Phone,
+                                 creative__c,CreatedDate,Designation__c,device__c,devicemodel__c,FormID__c,FormName__c,FullName__c,Form__c,GCLID__c,i_am_interested_in_programmes_for__c,
+                                 keyword__c,LeadSource,Status,Lead_Type__c,Mobile_Country_Code__c,network__c,CEE_Lead_Status__c,Selected_Program_BD_Owner__c,
+                                 Open_Lead_Sub_Status__c,Personal_City__c,Personal_Country__c,Personal_State__c,Product__c,CEE_ProductCode__c,Programme__c,RecordTypeId,RecordType.Name,
+                                 Query__c,Query1__c,Query2__c,Query3__c,Query4__c,Query5__c,Question__c,Question1__c,Question2__c,Question3__c,placement__c,LI_Hidden_Field_5__c,Check_for_Mobile__c,Cycle__c,
+                                 Batch__c,Question4__c,Question5__c,Description,target__c,term__c,UTMCampaign__c,utm_content__c,UTM__c,UTM_Source__c,UTM_Term__c,matchtype__c,
+                                 Webinar_Time_Spent__c,Years_of_Work_Exeperience__c,Product_Start_Date__c,Product_End_Date__c,OwnerId,Paid_Organic__c,Quarter_Programme__c,MQL__c,SQL__c,Program_Type__c,Programme_Fee__c,
+                                 Program_display_Name__c,Lead_user_Id__c,Old_Product_Code_Transferred__c,Free_Lesson__c,Response_from_Quantana__c,Quantana_User_Id__c,Eventbrite_event_attended__c From Lead Where ((Refined_Mobile_Number__c IN:newPhoneNumbers OR Email IN : newEmails) AND (Id NOT IN : newIds) AND (CEE_ProductCode__c =:newProductCode) AND CEE_ProductCode__c != null AND (RecordTypeId =:recordTypeExecEdB2B)) order by CreatedDate desc Limit 1];
+        }
+        else if(recordtypeNewLead == recordTypeOnlineProgram){
+            existingLeadsList = [Select Id,Name,MobilePhone,Refined_Mobile_Number__c,Admissions_Program__c,isConverted,Email,adgroupname__c,Advertiser_Account__c,Mobile_Number__c,Cohort__c,Lead_Created_Date__c,
+                                 Campaign__c,campaignname__c,City__c,City_PGP__c,Click_to_Dial_Response__c,completeurl__c,Company,Phone,
+                                 creative__c,CreatedDate,Designation__c,device__c,devicemodel__c,FormID__c,FormName__c,FullName__c,Form__c,GCLID__c,i_am_interested_in_programmes_for__c,
+                                 keyword__c,LeadSource,Status,Lead_Type__c,Mobile_Country_Code__c,network__c,CEE_Lead_Status__c,Selected_Program_BD_Owner__c,
+                                 Open_Lead_Sub_Status__c,Personal_City__c,Personal_Country__c,Personal_State__c,Product__c,CEE_ProductCode__c,Programme__c,RecordTypeId,RecordType.Name,
+                                 Query__c,Query1__c,Query2__c,Query3__c,Query4__c,Query5__c,Question__c,Question1__c,Question2__c,Question3__c,placement__c,LI_Hidden_Field_5__c,Check_for_Mobile__c,Cycle__c,
+                                 Batch__c,Question4__c,Question5__c,Description,target__c,term__c,UTMCampaign__c,utm_content__c,UTM__c,UTM_Source__c,UTM_Term__c,Latest_Source_Tracking__c,matchtype__c,
+                                 Webinar_Time_Spent__c,Years_of_Work_Exeperience__c,Product_Start_Date__c,Product_End_Date__c,OwnerId,Paid_Organic__c,Quarter_Programme__c,MQL__c,SQL__c,Program_Type__c,Programme_Fee__c,
+                                 Program_display_Name__c,Lead_user_Id__c,Old_Product_Code_Transferred__c,Free_Lesson__c,Response_from_Quantana__c,Quantana_User_Id__c,Eventbrite_event_attended__c From Lead Where ((Refined_Mobile_Number__c IN:newPhoneNumbers OR Email IN : newEmails) AND (Id NOT IN : newIds) AND (CEE_ProductCode__c =:newProductCode )AND CEE_ProductCode__c != null AND (RecordTypeId =:recordTypeOnlineProgram)) AND Group_Lead__c =:groupLead order by CreatedDate desc Limit 1];
+        }
+        
+        
+        for (Lead existingLead : existingLeadsList) {
+            System.debug('Existing Lead:' + existingLead);
+            existingLeadsByEmail.put(existingLead.Email, existingLead);
+            
+            
+            if(existingLead.Refined_Mobile_Number__c != null){
+                existingLeadsByPhoneNumber.put(existingLead.Refined_Mobile_Number__c, existingLead);
+            }
+            
+            oldLeadIds.add(existingLead.Id);
+            
+            if(existingLead.isConverted == true && string.isBlank(existingLead.Admissions_Program__c)){
+                oldIds.add(existingLead.Id);
+            }
+        }
+        
+        if(!oldIds.isEmpty()){
+            List<Opportunity> convertedOpportunity = [Select Id , Course__c , StageName , Lead__c from Opportunity where Lead__c IN :oldIds];
+            if(!convertedOpportunity.isEmpty()){
+                for(Opportunity opp:convertedOpportunity){
+                    map_leadIdByConvertedOpportunity.put(opp.Lead__c,opp);
+                }
+            }
+        }
+        
+        List<Associated_Lead__c> associatedLeadsToInsert = new List<Associated_Lead__c>();
+        
+        List<Lead> leadsToUpdate = new List<Lead>();
+        //List<Id> leadsToDeleteIds = new List<Id>();
+        
+        List<Associated_Lead__c> getExistingAssociatedLead = [Select Id , is_Master_Lead__c , Master_Lead__c from Associated_Lead__c where Master_Lead__c IN :oldLeadIds];
+        if(getExistingAssociatedLead.size() > 0){
+            for(Associated_Lead__c associatedLead:getExistingAssociatedLead){
+                if(map_leadIdByAssociatedLead.containsKey(associatedLead.Master_Lead__c)){
+                    map_leadIdByAssociatedLead.get(associatedLead.Master_Lead__c).add(associatedLead);
+                }
+                else{
+                    map_leadIdByAssociatedLead.put(associatedLead.Master_Lead__c,new List<Associated_Lead__c>{associatedLead});
+                }
+            }
+        }
+        
+        
+        for (Lead newLead : newLeads) {
+            if (existingLeadsByPhoneNumber.containsKey(newLead.Refined_Mobile_Number__c)) {
+                Lead existingLead = existingLeadsByPhoneNumber.get(newLead.Refined_Mobile_Number__c);
+                getOldAssociatedLead = map_leadIdByAssociatedLead.get(existingLead.Id);
+                if(getOldAssociatedLead != null){
+                    for(Associated_Lead__c associatedLead:getOldAssociatedLead){
+                        associatedLead.is_Master_Lead__c = false;
+                    }
+                }
+                Opportunity convertedOpp = map_leadIdByConvertedOpportunity.get(existingLead.Id);
+                if(convertedOpp != null && (convertedOpp.Course__c == 'Rejected' || convertedOpp.StageName == 'Lost')){
+                    continue;
+                }
+                else{
+                    List<Associated_Lead__c> getAssociatedLead = [Select Id , Master_Lead__c from Associated_Lead__c where Master_Lead__c =:newLead.Id];
+                    if(getAssociatedLead.size() > 0){
+                        for(Associated_Lead__c associatedLead:getAssociatedLead){
+                            if(convertedOpp != null){
+                                associatedLead.Opportunity__c = convertedOpp.Id;
+                            }
+                            associatedLead.Master_Lead__c = existingLead.Id;
+                        }
+                        update getAssociatedLead;
+                        //updateLeadEvents(existingLead, newLead);
+                    }
+                    if(existingLead.isConverted && string.isBlank(existingLead.Admissions_Program__c)){
+                        shouldProcessTrigger = true;
+                        leadsToUpdate.add(existingLead);
+                        continue;
+                    }
+                    else{
+                        updateLead(newLead, existingLead);
+                        shouldProcessTrigger = true;
+                        leadsToUpdate.add(existingLead);
+                        if(!System.isBatch() && !System.isFuture()){
+                            LeadTriggerHandler.EmailValidationBeforeInsertZerobounce(existingLead.Id);
+                        }
+                    }
+                }
+                
+            }
+            else if (existingLeadsByEmail.containsKey(newLead.Email)) {
+                Lead existingLead = existingLeadsByEmail.get(newLead.Email);
+                Opportunity convertedOpp = map_leadIdByConvertedOpportunity.get(existingLead.Id);
+                getOldAssociatedLead = map_leadIdByAssociatedLead.get(existingLead.Id);
+                if(getOldAssociatedLead != null){
+                    for(Associated_Lead__c associatedLead:getOldAssociatedLead){
+                        associatedLead.is_Master_Lead__c = false;
+                    }
+                }
+                if(convertedOpp != null && (convertedOpp.Course__c == 'Rejected' || convertedOpp.StageName == 'Lost')){
+                    continue;
+                }
+                else{
+                    List<Associated_Lead__c> getAssociatedLead = [Select Id , Master_Lead__c from Associated_Lead__c where Master_Lead__c =:newLead.Id];
+                    if(getAssociatedLead.size() > 0){
+                        for(Associated_Lead__c associatedLead:getAssociatedLead){
+                            if(convertedOpp != null){
+                                associatedLead.Opportunity__c = convertedOpp.Id;
+                            }
+                            associatedLead.Master_Lead__c = existingLead.Id;
+                        }
+                        update getAssociatedLead;
+                        //updateLeadEvents(existingLead, newLead);
+                    }
+                    if(existingLead.isConverted && string.isBlank(existingLead.Admissions_Program__c)){
+                        shouldProcessTrigger = true;
+                        leadsToUpdate.add(existingLead);
+                        continue;
+                    }
+                    else{
+                        updateLead(newLead, existingLead);
+                        shouldProcessTrigger = true;
+                        leadsToUpdate.add(existingLead);
+                        if(!System.isBatch() && !System.isFuture()){
+                            LeadTriggerHandler.EmailValidationBeforeInsertZerobounce(existingLead.Id);
+                        }
+                    }
+                }
+            }
+        }
+        
+        if(getOldAssociatedLead != null){
+            update getOldAssociatedLead;
+        }
+        
+        if (!leadsToUpdate.isEmpty()) {
+            System.debug('Updated Lead :' +leadsToUpdate);
+            update leadsToUpdate;
+            
+            /*if (shouldProcessTrigger) {
+// Schedule the job for delayed deletion
+Integer delayMinutes = 1;
+String jobName = 'LeadDeletionJob_' + System.now().getTime();
+System.scheduleBatch(new LeadDeletionBatch(newLeads), jobName, delayMinutes, 1);
+}*/
+            
+            if(shouldProcessTrigger){
+                List<LeadDeletionEvent__e> leadEventList = new List<LeadDeletionEvent__e>();
+                for(Lead leads : newLeads){
+                    LeadDeletionEvent__e newLeadEvent = new LeadDeletionEvent__e();
+                    newLeadEvent.Lead__c = leads.Id;
+                    leadEventList.add(newLeadEvent);
+                }
+                for(LeadDeletionEvent__e leadEvents : leadEventList){
+                    Database.SaveResult result = EventBus.publish(leadEvents);
+                    if (result.isSuccess()) {
+                        System.debug('LeadDeletionEvent published successfully.');
+                    }
+                }
+            }
+        }
+        shouldProcessTrigger = false;
+        
+        if(existingLeadsList.size() == 0){
+            if(!System.isBatch() && !System.isFuture()){
+                for(Id leadId:newIds){
+                    LeadTriggerHandler.EmailValidationBeforeInsertZerobounce(leadId);
+                }
+                
+            }
+        }
+    }
+    
+    public static void updateLead(Lead newLead, Lead existingLead) {
+        Map<String, Schema.SObjectField> leadFields = Lead.SObjectType.getDescribe().fields.getMap();
+        System.debug('leadFields'+leadFields);
+        String existingStatus = existingLead.Status;
+        String existingCEEStatus = existingLead.CEE_Lead_Status__c;
+        String existingExperience = existingLead.Years_of_Work_Exeperience__c;
+        string admissionsPrg = newLead.Admissions_Program__c;
+        string ProgrmName = newLead.Program_Name__c;
+
+        // added by sankeerthana ISB-3501
+        if ((existingLead.Eventbrite_event_attended__c == true) || (newLead.Eventbrite_event_attended__c == true)) {
+            existingLead.Eventbrite_event_attended__c = true;
+        } else {
+            existingLead.Eventbrite_event_attended__c = false;
+        }
+        
+        for (String fieldName : leadFields.keySet()) {
+            
+            Schema.DescribeFieldResult fieldDescribe = leadFields.get(fieldName).getDescribe();
+            //!string.isBlank(newLead.CEE_ProductCode__c) this check is very important, otherwise it will impact the addmission leads.
+            if(existingLead.RecordTypeId == leadExedRecordTypeId || existingLead.RecordTypeId == leadExedB2BRecordTypeId || existingLead.RecordTypeId == OnlineProgramRecordTypeId && !string.isBlank(newLead.CEE_ProductCode__c)){
+                if (fieldDescribe.isUpdateable()) {
+                    if ((newLead.get(fieldName) != null) && (fieldName!='CEE_ProductCode__c') && (fieldName!='Status') && (fieldName!='CEE_Lead_Status__c') && (fieldName!='Open_Lead_Sub_Status__c') && (fieldName!='Lead_Created_Date__c') &&(fieldName!='MobilePhone') &&(fieldName!='Mobile_Number__c') &&(fieldName!='Admissions_Program__c') && (fieldName != 'RecordTypeId') && (fieldName != 'OwnerId') &&  (fieldName != 'Description') && 
+                        fieldName != 'Product__c' && fieldName != 'sfleadcaphfprod__External_Lead_ID__c' && fieldName != 'hed__External_Id__c' && ((existingLead.RecordTypeId != OnlineProgramRecordTypeId && existingLead.RecordTypeId != leadExedRecordTypeId && existingLead.RecordTypeId != leadExedB2BRecordTypeId) || (fieldName != 'UTMCampaign__c' && fieldName != 'utm_content__c' && fieldName != 'UTM__c' && fieldName != 'UTM_Source__c' && fieldName != 'UTM_Term__c'))) {
+                            existingLead.put(fieldName, newLead.get(fieldName));
+                        }
+                    else if((newLead.get(fieldName) == null) && (fieldName!='Lead_Created_Date__c') && (fieldName!='MobilePhone') && (fieldName!='Mobile_Number__c') && (fieldName!='CEE_Lead_Status__c') && (fieldName!='Open_Lead_Sub_Status__c') && (fieldName != 'Product__c') && (fieldName != 'Description') && fieldName != 'sfleadcaphfprod__External_Lead_ID__c' && fieldName != 'hed__External_Id__c' && ((existingLead.RecordTypeId != OnlineProgramRecordTypeId) || (fieldName != 'UTMCampaign__c' && fieldName != 'utm_content__c' && fieldName != 'UTM__c' && fieldName != 'UTM_Source__c' && fieldName != 'UTM_Term__c')) && fieldName != 'Latest_Source_Tracking__c'){
+                        existingLead.put(fieldName,null);
+                    }
+                    if(fieldName == 'Lead_Created_Date__c'){
+                        existingLead.Lead_Created_Date__c = newLead.CreatedDate;
+                    }
+                    if(fieldName == 'CEE_ProductCode__c'){
+                        System.debug('SHOW BOTH CODES'+existingLead.CEE_ProductCode__c+newLead.CEE_ProductCode__c);
+                        if(existingLead.CEE_ProductCode__c == newLead.CEE_ProductCode__c){
+                            System.debug('codes are equal');
+                            if(newLead.RecordTypeId == OnlineProgramRecordTypeId){
+                                if(existingStatus != 'In Play'){
+                                    existingLead.Status = 'Open';
+                                    existingLead.CEE_Lead_Status__c = null;
+                                    existingLead.Open_Lead_Sub_Status__c = null;
+                                }
+                                else{
+                                    existingLead.Status = existingStatus;
+                                }
+                            }
+                            else if(newLead.RecordTypeId == leadExedRecordTypeId || newLead.RecordTypeId == leadExedB2BRecordTypeId){
+                                if(existingStatus != 'In Play' && existingStatus != 'To be Qualified'){
+                                    existingLead.Status = 'Open';
+                                    existingLead.CEE_Lead_Status__c = null;
+                                    existingLead.Open_Lead_Sub_Status__c = null;
+                                }
+                                else{
+                                    existingLead.Status = existingStatus;
+                                }
+                            }
+                            //  existingLead.Status = existingStatus;
+                            existingLead.CEE_Lead_Status__c = existingLead.CEE_Lead_Status__c;
+                            existingLead.Open_Lead_Sub_Status__c = existingLead.Open_Lead_Sub_Status__c;
+                        }
+                        else{
+                            System.debug('codes are unequal');
+                            existingLead.Status = newLead.Status;
+                            existingLead.CEE_Lead_Status__c = newLead.CEE_Lead_Status__c;
+                            existingLead.Open_Lead_Sub_Status__c = newLead.Open_Lead_Sub_Status__c;
+                            existingLead.CEE_ProductCode__c = newLead.CEE_ProductCode__c;
+                        }
+                        
+                    }
+                    
+                    if(fieldName == 'MobilePhone'){
+                        if(existingLead.Refined_Mobile_Number__c == newLead.Refined_Mobile_Number__c){
+                            existingLead.MobilePhone = newLead.MobilePhone;
+                        }
+                        else if(existingLead.Refined_Mobile_Number__c != newLead.Refined_Mobile_Number__c){
+                            existingLead.Mobile_Number__c = existingLead.MobilePhone;
+                            existingLead.MobilePhone = newLead.MobilePhone;
+                        }
+                    }
+                    
+                }
+            }
+        }
+        if((existingLead.RecordTypeId != leadExedRecordTypeId && existingLead.RecordTypeId != leadExedB2BRecordTypeId && existingLead.RecordTypeId != OnlineProgramRecordTypeId) && !string.isBlank(admissionsPrg)){
+            
+            String appPortalUserId = System.Label.ApplicantPortalAcceleratorUser;
+            system.debug('ddd..'+ProgrmName+'..'+appPortalUserId);
+            If(!string.isBlank(ProgrmName) && newLead.CreatedById == appPortalUserId){ 
+                if(existingLead.status != 'Application Submitted' && existingLead.status != 'Application in Progress'){
+                    
+                    existingLead.status = newLead.status;
+                    existingLead.CEE_Lead_Status__c = 'Open';
+                    existingLead.Open_Lead_Sub_Status__c = null;
+                }
+            }
+            
+            if(newLead.UTM_Source__c != 'Eventbrite API'){
+                
+                if(newLead.firstname != null){existingLead.firstname = newLead.firstname;}
+                if(newLead.LastName != null){existingLead.LastName = newLead.LastName;}
+                if(newLead.Years_of_Work_Exeperience__c != null){existingLead.Years_of_Work_Exeperience__c = newLead.Years_of_Work_Exeperience__c;}
+                // if(newLead.Designation__c != null){existingLead.Designation__c = newLead.Designation__c;}
+                if(!string.isBlank(newLead.Designation__c)){existingLead.Designation__c = newLead.Designation__c;}
+                if(newLead.Industry__c != null){existingLead.Industry__c = newLead.Industry__c;}
+                if(newLead.Industry != null){existingLead.Industry = newLead.Industry;}
+                // if(newLead.City__c != null){existingLead.City__c = newLead.City__c;}
+                if(!string.isBlank(existingLead.City__c)){existingLead.City__c = newLead.City__c;}
+                if(newLead.City_PGP__c != null){existingLead.City_PGP__c = newLead.City_PGP__c;}
+                // if(newLead.company != null){existingLead.company = newLead.company;}
+                if(!string.isBlank(newLead.company)){existingLead.company = newLead.company;}
+                
+                if(newLead.hed__Citizenship__c != null){existingLead.hed__Citizenship__c = newLead.hed__Citizenship__c;}
+                if(newLead.Year_of_Graduation__c != null){existingLead.Year_of_Graduation__c = newLead.Year_of_Graduation__c;}
+                if(newLead.Personal_Country__c != null){existingLead.Personal_Country__c = newLead.Personal_Country__c;}
+                //application fields
+                if(newLead.Application__c != null && existingLead.Application__c == null){existingLead.Application__c = newLead.Application__c;}
+                if(newLead.Application_Completion__c != null && existingLead.Application_Completion__c == null){existingLead.Application_Completion__c = newLead.Application_Completion__c;}
+                if(newLead.Application_Stage__c != null && existingLead.Application_Stage__c == null){existingLead.Application_Stage__c = newLead.Application_Stage__c;}
+                if(newLead.Application_Sub_Stage__c != null && existingLead.Application_Sub_Stage__c == null){existingLead.Application_Sub_Stage__c = newLead.Application_Sub_Stage__c;}
+                
+                
+            } 
+            if(string.isBlank(existingLead.Eventbrite_ID__c) && !string.isBlank(newLead.Eventbrite_ID__c)){
+                existingLead.Eventbrite_ID__c = newLead.Eventbrite_ID__c;
+            }
+            
+            if(existingLead.Admissions_Program__c == newLead.Admissions_Program__c && existingLead.RecordTypeId == AMPrecordTypeId){
+                System.debug('In admissions Program');
+                
+                if (existingStatus == 'Withdraw / Non-interested') {
+                    System.debug('Inside Withdrawn');
+                    existingLead.Status = 'Open';
+                    existingLead.CEE_Lead_Status__c = null;
+                    existingLead.Open_Lead_Sub_Status__c = null;
+                } 
+                
+                else if (existingStatus == 'Rejected / Not the right target audience' && (existingCEEStatus == 'Work experience mismatch  - High' || existingCEEStatus == 'Work experience mismatch  -  Less') && existingExperience!= newLead.Years_of_Work_Exeperience__c) {
+                    System.debug('inside rejected');
+                    existingLead.Status = 'Open';
+                    existingLead.CEE_Lead_Status__c = null;
+                    existingLead.Open_Lead_Sub_Status__c = null;
+                    
+                }
+                
+            }
+            
+        }
+        
+        if(existingLead.RecordTypeId == OnlineProgramRecordTypeId){                 
+           /* if (existingLead.UTM_Source__c == null) {
+                existingLead.UTMCampaign__c = newLead.UTMCampaign__c;
+                existingLead.utm_content__c = newLead.utm_content__c;
+                existingLead.UTM__c = newLead.UTM__c;
+                existingLead.UTM_Source__c = newLead.UTM_Source__c;
+                existingLead.UTM_Term__c = newLead.UTM_Term__c;
+            }*/ if (existingLead.UTM_Source__c != null) {
+                Boolean allUTMValuesAreNull = String.isBlank(newLead.UTMCampaign__c) &&
+                    String.isBlank(newLead.utm_content__c) &&
+                    String.isBlank(newLead.UTM__c) &&
+                    String.isBlank(newLead.UTM_Source__c) &&
+                    String.isBlank(newLead.UTM_Term__c);
+                
+                String newUTMValues = allUTMValuesAreNull ? 'No Source' : 
+                (newLead.UTM_Source__c != null ? newLead.UTM_Source__c : '') + ';' +
+                    (newLead.utm_content__c != null ? newLead.utm_content__c : '') + ';' +
+                    (newLead.UTM__c != null ? newLead.UTM__c : '') + ';' +
+                    (newLead.UTMCampaign__c != null ? newLead.UTMCampaign__c : '') + ';' +
+                    (newLead.UTM_Term__c != null ? newLead.UTM_Term__c : '');
+                
+                existingLead.Latest_Source_Tracking__c = newUTMValues;
+            }
+        }
+    }
+    
+    public static void updateLEH(List<Lead> leadList){
+        List<Associated_Lead__c> associatedLeadsToUpdate = new List<Associated_Lead__c>();
+        Id recordTypeExecEd = Schema.SObjectType.Lead.getRecordTypeInfosByName().get('ExecEd').getRecordTypeId();
+        Id recordTypeExecEdB2B = Schema.SObjectType.Lead.getRecordTypeInfosByName().get('ExecEd B2B').getRecordTypeId();
+        Id recordTypeOnlineProgram = Schema.SObjectType.Lead.getRecordTypeInfosByName().get('Online Program').getRecordTypeId();
+        Id recordTypeAdmissions = Schema.SObjectType.Lead.getRecordTypeInfosByName().get('Admissions').getRecordTypeId();
+        Id recordTypeAMP = Schema.SObjectType.Lead.getRecordTypeInfosByName().get('AMP Admissions').getRecordTypeId();
+        Id recordTypePGP = Schema.SObjectType.Lead.getRecordTypeInfosByName().get('PGP').getRecordTypeId();
+        for(Lead lead:leadList){
+            if(lead.RecordTypeId == recordTypeExecEd || lead.RecordTypeId == recordTypeExecEdB2B|| lead.RecordTypeId == recordTypeAdmissions || lead.RecordTypeId == recordTypeAMP || lead.RecordTypeId == recordTypePGP || lead.RecordTypeId == recordTypeOnlineProgram || !string.isBlank(lead.Admissions_Program__c)){
+                Associated_Lead__c associatedLead = updateAssociateLead(lead);
+                if(associatedLead != null){
+                    associatedLeadsToUpdate.add(associatedLead);
+                }
+                
+            }
+        }
+        if(associatedLeadsToUpdate.size() > 0){
+            upsert associatedLeadsToUpdate;
+        }
+    }
+    
+    private static Associated_Lead__c updateAssociateLead(Lead existingLead) {
+        String associatedLeadExistingId;
+        List<Product2> getProduct = new List<Product2>();
+        if(existingLead.CEE_ProductCode__c != null &&existingLead.CEE_ProductCode__c != ''){
+            getProduct = [Select Id from Product2 where ProductCode =:existingLead.CEE_ProductCode__c Order by CreatedDate Desc limit 1];
+        }        
+        List<Associated_Lead__c> getAssociatedLead = [Select Id from Associated_Lead__c where Master_Lead__c =:existingLead.Id Order by CreatedDate desc limit 1];
+        if(getAssociatedLead.size() > 0){
+            associatedLeadExistingId = getAssociatedLead[0].Id;
+            Associated_Lead__c associatedLead = new Associated_Lead__c();
+            associatedLead.Id = associatedLeadExistingId;
+            associatedLead.Master_Lead__c = existingLead.Id;
+            System.debug('1439>>>>'+existingLead.Lead_Type__c);
+            //added by sankeerthana ISB-3501
+            if (existingLead.Eventbrite_event_attended__c == true) {
+    associatedLead.Eventbrite_event_attended__c = true;
+            }
+            
+            
+            //Admission don't want tracking fields to be updated with new lead while merging
+            if(existingLead.RecordTypeId == leadExedRecordTypeId || existingLead.RecordTypeId == leadExedB2BRecordTypeId || existingLead.RecordTypeId == OnlineProgramRecordTypeId){
+                associatedLead.Email__c = existingLead.Email;
+                associatedLead.Contact_Number__c = existingLead.Refined_Mobile_Number__c;
+                associatedLead.Name = String.isBlank(existingLead.FirstName)? existingLead.LastName : existingLead.FirstName + ' ' + existingLead.LastName;
+                associatedLead.Designation__c = existingLead.Designation__c;
+                associatedLead.Mobile_Country_Code__c = existingLead.Mobile_Country_Code__c;
+                associatedLead.Company__c = existingLead.Company;
+                associatedLead.Years_of_Work_Experience__c = existingLead.Years_of_Work_Exeperience__c;
+                associatedLead.City__c = existingLead.City__c;
+                associatedLead.completeurl__c = existingLead.completeurl__c;
+                associatedLead.Campaign__c = existingLead.Campaign__c;
+                associatedLead.campaignname__c = existingLead.campaignname__c;
+                associatedLead.adgroupname__c = existingLead.adgroupname__c;
+                associatedLead.Form__c = existingLead.Form__c;
+                associatedLead.Advertiser_Account__c = existingLead.Advertiser_Account__c;
+                associatedLead.devicemodel__c = existingLead.devicemodel__c;
+                associatedLead.creative__c = existingLead.creative__c;
+                associatedLead.device__c = existingLead.device__c;
+                associatedLead.GCLID__c = existingLead.GCLID__c;
+                associatedLead.matchtype__c = existingLead.matchtype__c;
+                associatedLead.network__c = existingLead.network__c;
+                associatedLead.term__c = existingLead.term__c;
+                associatedLead.Record_Type__c = existingLead.RecordType.Name;
+            }
+            
+            
+            associatedLead.Lead_Source__c = existingLead.LeadSource;
+            associatedLead.Start_Date__c = existingLead.Product_Start_Date__c;
+            associatedLead.End_Date__c = existingLead.Product_End_Date__c;
+            
+            
+            
+            
+            
+            associatedLead.FullName__c = existingLead.FullName__c;
+            
+            associatedLead.i_am_interested_in_programmes_for__c = existingLead.i_am_interested_in_programmes_for__c;
+            associatedLead.keyword__c = existingLead.keyword__c;
+            associatedLead.Lead_Type__c = existingLead.Lead_Type_Formula__c;
+            
+            associatedLead.Open_Lead_Sub_Status__c = existingLead.Open_Lead_Sub_Status__c;
+            associatedLead.CEE_Lead_Status__c = existingLead.CEE_Lead_Status__c;
+            associatedLead.Personal_City__c = existingLead.Personal_City__c;
+            associatedLead.Personal_State__c = existingLead.Personal_State__c;
+            associatedLead.CEE_ProductCode__c = existingLead.CEE_ProductCode__c;
+            associatedLead.Query__c = existingLead.Query__c;
+            associatedLead.Query1__c = existingLead.Query1__c;
+            associatedLead.Query2__c = existingLead.Query2__c;
+            associatedLead.Query3__c = existingLead.Query3__c;
+            associatedLead.Query4__c = existingLead.Query4__c;
+            associatedLead.Query5__c = existingLead.Query5__c;
+            associatedLead.Remarks__c = existingLead.Description;
+            associatedLead.Lead_Status__c = existingLead.Status;
+            associatedLead.target__c = existingLead.target__c;
+            
+            associatedLead.Webinar_Time_Spent__c = existingLead.Webinar_Time_Spent__c;
+            associatedLead.Programme__c = existingLead.Programme__c;
+            associatedLead.Alternate_Mobile_Number__c = existingLead.Mobile_Number__c;
+            associatedLead.Click_to_Dial_Response__c = existingLead.Click_to_Dial_Response__c;
+            associatedLead.City_PGP__c = existingLead.City_PGP__c;
+            if(getProduct.size() > 0){
+                associatedLead.Product__c = getProduct[0].Id;
+            }
+            associatedLead.FormID__c = existingLead.FormID__c;
+            associatedLead.Question__c = existingLead.Question__c;
+            associatedLead.Question1__c = existingLead.Question1__c;
+            associatedLead.Question2__c = existingLead.Question2__c;
+            associatedLead.Question3__c = existingLead.Question3__c;
+            associatedLead.Question4__c = existingLead.Question4__c;
+            associatedLead.Question5__c = existingLead.Question5__c;
+            associatedLead.FormName__c = existingLead.FormName__c;
+            associatedLead.Personal_Country__c = existingLead.Personal_Country__c;
+            associatedLead.Refined_Mobile_Number__c = existingLead.Refined_Mobile_Number__c;   
+            associatedLead.Cohort__c = existingLead.Cohort__c;
+            associatedLead.Office_Phone__c = existingLead.Phone;
+            associatedLead.Lead_Owner__c = existingLead.OwnerId;
+            associatedLead.Quarter_Programme__c = existingLead.Quarter_Programme__c;
+            associatedLead.MQL__c = existingLead.MQL__c;
+            associatedLead.SQL__c = existingLead.SQL__c;
+            associatedLead.Program_Type__c = existingLead.Program_Type__c;
+            associatedLead.Programme_Fee__c = existingLead.Programme_Fee__c;
+            associatedLead.Paid_Organic__c = existingLead.Paid_Organic__c;
+            associatedLead.Batch__c = existingLead.Batch__c;
+            associatedLead.Cycle__c = existingLead.Cycle__c;
+            associatedLead.Check_for_Mobile__c = existingLead.Check_for_Mobile__c;
+            associatedLead.LI_Hidden_Field_5__c = existingLead.LI_Hidden_Field_5__c;
+            associatedLead.placement__c = existingLead.placement__c;
+            //Online Program
+            associatedLead.Program_display_Name__c = existingLead.Program_display_Name__c;
+            associatedLead.Lead_user_Id__c = existingLead.Lead_user_Id__c;
+            associatedLead.Old_Product_Code_Transferred__c = existingLead.Old_Product_Code_Transferred__c;
+            associatedLead.Free_Lesson__c = existingLead.Free_Lesson__c;
+            associatedLead.Response_from_Quantana__c = existingLead.Response_from_Quantana__c;
+            associatedLead.Quantana_User_Id__c = existingLead.Quantana_User_Id__c;
+            
+            associatedLead.Have_Taken_the_GAMT_or_GRE__c = existingLead.GMAT_GRE_Taken__c;
+            associatedLead.Would_you_like_to_know_more_about_PGP__c = existingLead.What_you_would_like_to_know_more__c;
+            associatedLead.Are_you_palnning_to_apply_pgp_this_year__c = existingLead.Are_you_planning_to_apply_PGP_this_year__c;
+            associatedLead.Pgp_application_round__c = existingLead.PGP_Application_Round__c;
+            associatedLead.GRE_Score__c = existingLead.GRE_Score__c;
+            associatedLead.GMAT_Score__c = String.valueOf(existingLead.GMAT_Score__c);
+            associatedLead.Do_you_have_a_family_business__c = existingLead.Do_you_have_a_Family_Business__c;
+            associatedLead.Industry_1__c = existingLead.Industry__c;
+            associatedLead.Industry_2__c = existingLead.Industry;
+            associatedLead.Number_of_Participants__c = existingLead.Number_of_Participants__c;
+            associatedLead.Group_Lead__c= existingLead.Group_Lead__c;
+            if(existingLead.Application__c != null){
+                associatedLead.Application__c = existingLead.Application__c;
+            }
+            
+            
+            if(existingLead.Lead_Created_Date__c == null){
+                associatedLead.Lead_Created_Date__c = existingLead.CreatedDate;
+            }
+            else associatedLead.Lead_Created_Date__c = existingLead.Lead_Created_Date__c;
+            return associatedLead;
+        }
+        else{
+            return null;
+        }
+    }
+    
+    public static void copyRemarksToRemarksTableu(List<Lead> leads) {
+        for (Lead lead : leads) {
+            if (lead.Description != null) {
+                lead.Remarks_Tableau__c = lead.Description.substring(0, Math.min(255, lead.Description.length()));
+            } else {
+                lead.Remarks_Tableau__c = null;
+            }
+        }
+    } 
+    
+    /*Private static void updateLeadEvents(lead existingLeadRcd, lead newLeadRcd) {
+try{
+if(!string.isBlank(existingLeadRcd.Admissions_Program__c)){
+list<LeadEvents__c> lstleadevents = [Select Id,Lead__c from LeadEvents__c WHERE Lead__c =:newLeadRcd.Id and Lead__c !=null];
+for(LeadEvents__c le : lstleadevents){
+le.Lead__c = existingLeadRcd.Id;
+}
+
+if(!lstleadevents.isEmpty()){
+update lstleadevents;
+}
+
+}
+} catch (System.Exception e) {
+
+//method parameters ErrorHandling.LogError(string Type, string endPoint, String ApexClass, string requestBody,string responseBody, string status, string statusCode);
+ErrorHandling.LogError('ApexTriggers',null,'LeadTriggerHandler',string.valueof(newLeadRcd),string.valueof(e),null,null);
+}
+}*/
+    /*
+Company:Myridius
+Date:27-05-2025
+Description: UrlToFieldMapping class to map URL parameters to Lead fields using custom metadata
+*/
+    // Main function to populate Lead fields from URL parameters using metadata mappings
+    public static void UrlToFieldMapping(List<Lead> newLeads) {
+        Map<String, String> fieldMappings = getUrlFieldMappings();
+        Set<String> paidUtmSources = getPaidUtmSources();
+        
+        if (fieldMappings.isEmpty()) {
+            System.debug('⚠ No URL field mappings found in metadata');
+            return;
+        }
+        
+        // Get record type IDs for filtering
+        Map<String, Id> recordTypeMap = getRecordTypeMap();
+        Id onlineProgramRecordTypeId = recordTypeMap.get('online_program');
+        
+        for (Lead newLead : newLeads) {
+            try {
+                // Only process leads with 'online_program' record type
+                if (newLead.RecordTypeId != onlineProgramRecordTypeId) {
+                    continue;
+                }
+                // Check if URL exists
+                if (String.isNotBlank(newLead.completeurl__c)) {
+                    populateFieldsFromUrl(newLead, fieldMappings);
+                }
+                handleUtmGroupingLogic(newLead, paidUtmSources);
+                
+            } catch (Exception e) {
+                new LogException().Module('UrlToFieldMapping Function').log(e);
+                System.debug(e);
+            }
+        }
+    }
+    
+    // Get record type map for filtering
+    private static Map<String, Id> getRecordTypeMap() {
+        Map<String, Id> recordTypeMap = new Map<String, Id>();
+        for (RecordType rt : [SELECT Id, DeveloperName FROM RecordType WHERE SObjectType = 'Lead']) {
+            recordTypeMap.put(rt.DeveloperName.toLowerCase(), rt.Id);
+        }
+        return recordTypeMap;
+    }
+    
+    // Retrieves active URL parameter to Lead field mappings from custom metadata
+    private static Map<String, String> getUrlFieldMappings() {
+        Map<String, String> urlFieldMappingMap = new Map<String, String>();
+        
+        for (URL_Field_Mapping__mdt m : [
+            SELECT URL_Parameter__c, Lead_Field_API_Name__c
+            FROM URL_Field_Mapping__mdt
+            WHERE Is_Active__c = true
+            ORDER BY Order__c ASC
+        ]) {
+            if (m.URL_Parameter__c != null && m.Lead_Field_API_Name__c != null) {
+                urlFieldMappingMap.put(
+                    m.URL_Parameter__c.toLowerCase(),
+                    m.Lead_Field_API_Name__c
+                );
+            }
+        }
+        
+        return urlFieldMappingMap;
+    }
+    
+    // Retrieves paid UTM sources from custom metadata
+    private static Set<String> getPaidUtmSources() {
+        Set<String> paidSources = new Set<String>();
+        for (UTM_Sources__mdt utmSource : [
+            SELECT Source_Name__c
+            FROM UTM_Sources__mdt
+            WHERE Is_Active__c = true
+        ]) {
+            if (String.isNotBlank(utmSource.Source_Name__c)) {
+                paidSources.add(utmSource.Source_Name__c.toLowerCase());
+            }
+        }
+        return paidSources;
+    }
+    
+    // Extracts URL parameters and maps them to corresponding Lead fields
+    private static void populateFieldsFromUrl(Lead leadRecord,
+                                              Map<String, String> fieldMappings) {
+                                                  Map<String, String> params = parseUrlParameters(leadRecord.completeurl__c);
+                                                  if (!params.isEmpty()) {
+                                                      for (String paramKey : params.keySet()) {
+                                                          try {
+                                                              String fieldApi = fieldMappings.get(paramKey.toLowerCase());
+                                                              String val = params.get(paramKey);
+                                                              if (fieldApi != null && String.isNotBlank(val)) {
+                                                                  leadRecord.put(fieldApi, val);
+                                                                  System.debug('Mapped param "' + paramKey +
+                                                                               '" to field ' + fieldApi + ': ' + val);
+                                                              }
+                                                          } catch (Exception e) {
+                                                              new LogException().Module('UrlToFieldMapping Function').log(e);
+                                                              System.debug(e);
+                                                          }
+                                                      }
+                                                  }
+                                              }
+    
+   
+    // Handle UTM Grouping logic as per FR2
+    private static void handleUtmGroupingLogic(Lead leadRecord, Set<String> paidUtmSources) {
+        try {
+            if (String.isNotBlank(leadRecord.UTM_Source__c)) {
+                String utmSource = leadRecord.UTM_Source__c.toLowerCase();
+                
+                // Check if the UTM source is in the paid sources set
+                if (paidUtmSources.contains(utmSource)) {
+                    leadRecord.UTM_Grouping__c = 'Paid';
+                    System.debug('UTM Grouping set to Paid for source: ' + leadRecord.UTM_Source__c);
+                } else {
+                    leadRecord.UTM_Grouping__c = 'Not Paid';
+                    System.debug('UTM Grouping set to Not Paid for source: ' + leadRecord.UTM_Source__c);
+                }
+            } else {
+                // Default to Not Paid if no UTM source
+                leadRecord.UTM_Grouping__c = 'Not Paid';
+                System.debug('UTM Grouping set to Not Paid (no UTM source)');
+            }
+        } catch (Exception e) {
+            new LogException().Module('UTM Grouping Logic').log(e);
+            System.debug('Error in UTM Grouping logic: ' + e.getMessage());
+        }
+    }
+    
+    // Parses URL query string and returns key-value pairs as a map
+    private static Map<String, String> parseUrlParameters(String url) {
+        Map<String, String> parameters = new Map<String, String>();
+        if (String.isNotBlank(url)) {
+            Integer qm = url.indexOf('?');
+            if (qm >= 0 && qm + 1 < url.length()) {
+                String qs = url.substring(qm + 1);
+                Integer hash = qs.indexOf('#');
+                if (hash >= 0) {
+                    qs = qs.substring(0, hash);
+                }
+                
+                // Remove everything from '?params=' onwards
+                Integer paramsIndex = qs.indexOf('?params=');
+                if (paramsIndex >= 0) {
+                    qs = qs.substring(0, paramsIndex);
+                }
+                
+                for (String pair : qs.split('&')) {
+                    if (String.isNotBlank(pair)) {
+                        List<String> kv = pair.split('=', 2);
+                        String key = EncodingUtil.urlDecode(kv[0], 'UTF-8');
+                        String val = kv.size() > 1
+                            ? EncodingUtil.urlDecode(kv[1], 'UTF-8')
+                            : '';
+                        if (String.isNotBlank(key)) {
+                            parameters.put(key.toLowerCase(), val);
+                        }
+                    }
+                }
+            }
+        }
+        return parameters;
+    }
+    
+    public static void stampApplicationDate(List<Lead> leadsToProcess, Map<Id, Lead> oldLeadsMap) {
+        try{
+            Set<Id> applicationIdsToQuery = new Set<Id>();
+            
+            for (Lead currentLead : leadsToProcess) {
+                if (oldLeadsMap != null) {
+                    Lead oldLead = oldLeadsMap.get(currentLead.Id);
+                    if (currentLead.Application__c != null && oldLead.Application__c == null && currentLead.Application__c != oldLead.Application__c) {
+                        applicationIdsToQuery.add(currentLead.Application__c);
+                    }
+                } else {
+                    if (currentLead.Application__c != null) {
+                        applicationIdsToQuery.add(currentLead.Application__c);
+                    }
+                }
+            }
+            
+            if (!applicationIdsToQuery.isEmpty()) {
+                Map<Id, hed__Application__c> appMap = new Map<Id, hed__Application__c>(
+                    [SELECT Id, CreatedDate FROM hed__Application__c WHERE Id IN :applicationIdsToQuery]
+                );
+                
+                for (Lead l : leadsToProcess) {
+                    if (l.Application__c != null && appMap.containsKey(l.Application__c)) {
+                        l.Created_Date_Time_Tableau__c = appMap.get(l.Application__c).CreatedDate.format();
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            ErrorLogHandler.createLog('LeadTriggerHandler.stampApplicationDate()','Apex Class',ex,null,null,null);
+        }      
+    }
+}
