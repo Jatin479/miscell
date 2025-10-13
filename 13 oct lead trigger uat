@@ -1,0 +1,90 @@
+/**
+ * @description       : 
+ * @author            : Anitha Alex
+ * @group             : 
+ * @last modified on  : 18-07-2025
+ * @last modified by  : anitha.alex@aethereus.com
+**/
+trigger LeadTrigger on Lead (before insert,after insert,before update,after update) {
+    Map<String,Trigger_Switch__c> allCodes = Trigger_Switch__c.getAll();
+    if(allCodes!=null && allCodes.containsKey('CEELead') && allCodes.get('CEELead').SwitchOff__c == false){
+        if(trigger.isBefore && trigger.isInsert){
+            LeadTriggerHandler.beforeInsert(Trigger.new);
+			LeadTriggerHandler.updateProductCode(Trigger.new);
+            LeadTriggerHandler.updateMQLSQL(Trigger.new);
+            LeadTriggerHandler.countOnlineProgramLeads(Trigger.new);
+            LeadTriggerHandler.updateWorkEx(Trigger.new);
+            LeadTriggerHandler.UpdateRefferesLead(Trigger.new);
+            LeadTriggerHandler.handleLeadInsert(Trigger.new);
+            LeadTriggerHandler.updateToJunkLeads(Trigger.new);
+            // LeadTriggerHandler.checkMobileEmailForJunkStatus(Trigger.new, null);
+            LeadTriggerHandler.leadOwnerMapping(Trigger.New);
+            LeadTriggerHandler.stampApplicationDate(Trigger.New,null);
+         	if(LeadTriggerHandler_Two.onlyOnceBeforeInsert){
+                LeadTriggerHandler_Two.onlyOnceBeforeInsert = false;
+                LeadTriggerHandler_Two.beforeInsert(Trigger.new);
+                LeadScoreHandler.calculateLeadScore(Trigger.new);
+            }
+           LeadTriggerHandler.UrlToFieldMapping(Trigger.new);
+            
+        }
+        if(trigger.isAfter && trigger.isInsert){
+            //LeadTriggerHandler_Two.AfterInsert(Trigger.New);//For creating leadevents
+            LeadTriggerHandler.createLEH(Trigger.New);
+            LeadTriggerHandler.leadMerge(Trigger.New);
+            LeadTriggerHandler.leadConvertionGrants(Trigger.oldMap, Trigger.new,'Existing');
+            LeadTriggerHandler.AddingScheduletoLead(Trigger.New); 
+            LeadTriggerHandler.createLeadinQuantana(Trigger.new);
+            LeadTriggerHandler.sendGMACEmail(Trigger.New);
+            LeadTriggerHandler.sendEmailToGmacFrDean(Trigger.new);
+
+            if(LeadTriggerHandler.onlyOnceAfterinsert){
+                LeadTriggerHandler.onlyOnceAfterinsert = false;
+               masterLeadIdPopulationEventPublisher.publishMasterLeadIdPopulationEvent(Trigger.new);
+            }
+        }
+        if(trigger.isBefore && trigger.isUpdate){
+            if(LeadTriggerHandler.onlyOnceBeforeUpdate){
+                LeadTriggerHandler.onlyOnceBeforeUpdate = false;
+                LeadTriggerHandler.updateWorkEx(Trigger.new);
+                LeadTriggerHandler.leadStatusToBeQualified(Trigger.oldMap , trigger.NewMap);
+                LeadTriggerHandler.updateToJunkLeads(Trigger.new);
+                LeadTriggerHandler.checkMobileEmailForJunkStatus(Trigger.new, Trigger.oldMap);
+                LeadScoreHandler.handleLeadUpdates(Trigger.oldMap, Trigger.newMap);
+            }
+            LeadTriggerHandler.beforeUpdate(trigger.new,trigger.oldMap,trigger.newMap);
+			LeadTriggerHandler.updateMQLSQL(Trigger.new);
+            LeadTriggerHandler.stampApplicationDate(Trigger.New,Trigger.oldMap);
+          //  LeadTriggerHandler.CASClientMeetingTrackerCheck(trigger.newMap,trigger.oldMap);
+        }
+        if(Trigger.isAfter && Trigger.isUpdate ){
+            if(LeadTriggerHandler.onlyOnceAfterupdte){
+                LeadTriggerHandler.onlyOnceAfterupdte = false;
+                LeadTriggerHandler.leadConversionProcessLWP(Trigger.New,trigger.newMap,trigger.oldMap);
+                LeadTriggerHandler.updateLEH(Trigger.New);
+                LeadTriggerHandler.leadConvertionGrants(Trigger.oldMap, Trigger.new,'New');
+             	LeadTriggerHandler.sendEmailToGrantsOffice(Trigger.new, Trigger.oldMap);
+                if(!System.isBatch() && !System.isFuture()){
+                    for(Lead lead:Trigger.new){
+                        //LeadTriggerHandler.EmailValidationBeforeInsertZerobounce(lead.Id);
+                    }
+                }
+                
+            }
+            
+            
+			
+        }
+        
+        if (Trigger.isBefore) {
+            if (Trigger.isInsert || Trigger.isUpdate) {
+                LeadTriggerHandler.copyRemarksToRemarksTableu(Trigger.new);
+            }
+        }
+       /* if (Trigger.isAfter && Trigger.isInsert) {
+            LeadTriggerHandler.handleDuplicateLeadRecords(Trigger.new);
+        }*/
+    }
+    
+    
+}
